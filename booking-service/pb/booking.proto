@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+package booking;
+
+option go_package = "github.com/MedConnect/booking-service/pb";
