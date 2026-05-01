@@ -1,0 +1,29 @@
+# Binarios generados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+server
+
+# Binarios de test, generados con `go test -c`
+*.test
+
+# Archivos de salida de coverage
+*.out
+
+# Directorio de dependencias (para proyectos que usan vendor)
+vendor/
+
+# Archivos de entorno y variables secretas
+.env
+*.local
+
+# Archivos de IDE y sistema operativo
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
