@@ -1,0 +1,8 @@
+.git
+.gitignore
+main
+server
+*.test
+*.out
+.env
+*.local

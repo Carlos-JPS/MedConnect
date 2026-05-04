@@ -1,0 +1,42 @@
+services:
+  booking_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${BOOKING_DB_NAME:-booking_db}
+      POSTGRES_USER: ${BOOKING_DB_USER:-booking}
+      POSTGRES_PASSWORD: ${BOOKING_DB_PASSWORD:-booking_password}
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+      - ./booking-service/migrations/000001_create_booking_tables.up.sql:/docker-entrypoint-initdb.d/001_create_booking_tables.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOKING_DB_USER:-booking} -d ${BOOKING_DB_NAME:-booking_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medconnect_internal
+
+  booking-service:
+    build:
+      context: ./booking-service
+    environment:
+      BOOKING_SERVICE_HOST: ${BOOKING_SERVICE_HOST:-0.0.0.0}
+      BOOKING_SERVICE_PORT: ${BOOKING_SERVICE_PORT:-50051}
+      BOOKING_DB_DSN: ${BOOKING_DB_DSN:-postgres://booking:booking_password@booking_db:5432/booking_db?sslmode=disable}
+      AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
+      PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
+      BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+    expose:
+      - "${BOOKING_SERVICE_PORT:-50051}"
+    depends_on:
+      booking_db:
+        condition: service_healthy
+    networks:
+      - medconnect_internal
+
+volumes:
+  booking_db_data:
+
+networks:
+  medconnect_internal:
+    driver: bridge
