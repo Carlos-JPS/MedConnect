@@ -34,6 +34,22 @@ services:
     networks:
       - medconnect_internal
 
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    environment:
+      API_GATEWAY_HOST: ${API_GATEWAY_HOST:-0.0.0.0}
+      API_GATEWAY_PORT: ${API_GATEWAY_PORT:-8080}
+      API_GATEWAY_REQUEST_TIMEOUT: ${API_GATEWAY_REQUEST_TIMEOUT:-5s}
+      BOOKING_SERVICE_TARGET: ${BOOKING_SERVICE_TARGET:-booking-service:50051}
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:${API_GATEWAY_PORT:-8080}"
+    depends_on:
+      - booking-service
+    networks:
+      - medconnect_internal
+
 volumes:
   booking_db_data:
 
