@@ -2,10 +2,12 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/MedConnect/booking-service/internal/service"
 	pb "github.com/MedConnect/booking-service/pb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -18,15 +20,53 @@ func NewServer(bookingService service.BookingService) *Server {
 	return &Server{bookingService: bookingService}
 }
 
+func (s *Server) CreateBooking(ctx context.Context, req *pb.CreateBookingRequest) (*pb.CreateBookingResponse, error) {
+	booking, err := s.bookingService.CreateBooking(ctx, service.CreateBookingInput{
+		PatientID: req.GetPatientId(),
+		DoctorID:  req.GetDoctorId(),
+		SlotID:    req.GetSlotId(),
+		Notes:     req.GetNotes(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.CreateBookingResponse{
+		BookingId:     booking.BookingID,
+		Status:        mapStatus(booking.Status),
+		ReservedUntil: timestamppb.New(booking.ReservedUntil),
+	}, nil
+}
+
 func (s *Server) GetBooking(ctx context.Context, req *pb.GetBookingRequest) (*pb.GetBookingResponse, error) {
-	booking, err := s.bookingService.GetBooking(ctx, req.GetBookingId())
+	details, err := s.bookingService.GetBooking(ctx, req.GetBookingId())
 	if err != nil {
 		return nil, err
 	}
 
 	return &pb.GetBookingResponse{
-		Booking: mapBooking(booking),
+		Booking: mapBooking(details.Booking),
+		Events:  mapEvents(details.Events),
 	}, nil
+}
+
+func (s *Server) ListBookingsByPatient(ctx context.Context, req *pb.ListBookingsByPatientRequest) (*pb.ListBookingsByPatientResponse, error) {
+	bookings, err := s.bookingService.ListBookingsByPatient(ctx, req.GetPatientId(), mapPBStatus(req.GetStatus()))
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.ListBookingsByPatientResponse{
+		Bookings: mapBookings(bookings),
+	}, nil
+}
+
+func mapBookings(bookings []service.Booking) []*pb.Booking {
+	result := make([]*pb.Booking, 0, len(bookings))
+	for _, booking := range bookings {
+		result = append(result, mapBooking(booking))
+	}
+	return result
 }
 
 func mapBooking(booking service.Booking) *pb.Booking {
@@ -47,6 +87,24 @@ func mapBooking(booking service.Booking) *pb.Booking {
 	}
 }
 
+func mapEvents(events []service.BookingEvent) []*pb.BookingEvent {
+	result := make([]*pb.BookingEvent, 0, len(events))
+	for _, event := range events {
+		result = append(result, mapEvent(event))
+	}
+	return result
+}
+
+func mapEvent(event service.BookingEvent) *pb.BookingEvent {
+	return &pb.BookingEvent{
+		EventId:   event.EventID,
+		BookingId: event.BookingID,
+		EventType: mapEventType(event.EventType),
+		Payload:   mapPayload(event.Payload),
+		CreatedAt: timestamppb.New(event.CreatedAt),
+	}
+}
+
 func mapStatus(status service.Status) pb.BookingStatus {
 	switch status {
 	case service.StatusPendingPayment:
@@ -60,6 +118,54 @@ func mapStatus(status service.Status) pb.BookingStatus {
 	default:
 		return pb.BookingStatus_BOOKING_STATUS_UNSPECIFIED
 	}
+}
+
+func mapPBStatus(status pb.BookingStatus) service.Status {
+	switch status {
+	case pb.BookingStatus_BOOKING_STATUS_PENDING_PAYMENT:
+		return service.StatusPendingPayment
+	case pb.BookingStatus_BOOKING_STATUS_CONFIRMED:
+		return service.StatusConfirmed
+	case pb.BookingStatus_BOOKING_STATUS_CANCELLED:
+		return service.StatusCancelled
+	case pb.BookingStatus_BOOKING_STATUS_EXPIRED:
+		return service.StatusExpired
+	default:
+		return service.StatusUnspecified
+	}
+}
+
+func mapEventType(eventType service.EventType) pb.BookingEventType {
+	switch eventType {
+	case service.EventCreated:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_CREATED
+	case service.EventPaymentApproved:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_PAYMENT_APPROVED
+	case service.EventConfirmed:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_CONFIRMED
+	case service.EventCancelled:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_CANCELLED
+	case service.EventExpired:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_EXPIRED
+	default:
+		return pb.BookingEventType_BOOKING_EVENT_TYPE_UNSPECIFIED
+	}
+}
+
+func mapPayload(payload []byte) *structpb.Struct {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	var values map[string]any
+	if err := json.Unmarshal(payload, &values); err != nil {
+		return nil
+	}
+	structValue, err := structpb.NewStruct(values)
+	if err != nil {
+		return nil
+	}
+	return structValue
 }
 
 func timestampPtr(value *time.Time) *timestamppb.Timestamp {

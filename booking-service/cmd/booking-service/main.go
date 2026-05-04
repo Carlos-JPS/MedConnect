@@ -22,7 +22,12 @@ func main() {
 		log.Fatalf("error al escuchar en %s:%s: %v", cfg.GRPCHost, cfg.GRPCPort, err)
 	}
 
-	repo := postgres.NewRepository(cfg.DatabaseDSN)
+	repo, err := postgres.Open(cfg.DatabaseDSN)
+	if err != nil {
+		log.Fatalf("error al inicializar repositorio booking: %v", err)
+	}
+	defer repo.Close()
+
 	_ = availabilityclient.NewNoopClient()
 	_ = paymentclient.NewNoopClient()
 

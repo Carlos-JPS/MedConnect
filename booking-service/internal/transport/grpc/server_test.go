@@ -14,9 +14,31 @@ type fakeBookingService struct {
 	lastID  string
 }
 
-func (f *fakeBookingService) GetBooking(_ context.Context, bookingID string) (service.Booking, error) {
+func (f *fakeBookingService) CreateBooking(_ context.Context, input service.CreateBookingInput) (service.Booking, error) {
+	return service.Booking{
+		PatientID: input.PatientID,
+		DoctorID:  input.DoctorID,
+		SlotID:    input.SlotID,
+		Status:    service.StatusPendingPayment,
+	}, nil
+}
+
+func (f *fakeBookingService) GetBooking(_ context.Context, bookingID string) (service.BookingDetails, error) {
 	f.lastID = bookingID
-	return f.booking, nil
+	return service.BookingDetails{
+		Booking: f.booking,
+		Events: []service.BookingEvent{
+			{BookingID: bookingID, EventType: service.EventCreated, CreatedAt: f.booking.CreatedAt},
+		},
+	}, nil
+}
+
+func (f *fakeBookingService) ListBookingsByPatient(_ context.Context, patientID string, status service.Status) ([]service.Booking, error) {
+	return []service.Booking{{PatientID: patientID, Status: status}}, nil
+}
+
+func (f *fakeBookingService) UpdateBookingStatus(_ context.Context, input service.UpdateBookingStatusInput) (service.Booking, error) {
+	return service.Booking{BookingID: input.BookingID, Status: input.Status}, nil
 }
 
 func TestGetBookingDelegatesToServiceAndMapsResponse(t *testing.T) {
@@ -63,5 +85,8 @@ func TestGetBookingDelegatesToServiceAndMapsResponse(t *testing.T) {
 	}
 	if resp.GetBooking().GetNotes() != "Control anual" {
 		t.Fatalf("expected notes to be mapped, got %q", resp.GetBooking().GetNotes())
+	}
+	if len(resp.GetEvents()) != 1 {
+		t.Fatalf("expected one event, got %d", len(resp.GetEvents()))
 	}
 }
