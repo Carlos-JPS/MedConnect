@@ -38,6 +38,22 @@ func (s *Server) CreateBooking(ctx context.Context, req *pb.CreateBookingRequest
 	}, nil
 }
 
+func (s *Server) CancelBooking(ctx context.Context, req *pb.CancelBookingRequest) (*pb.CancelBookingResponse, error) {
+	booking, err := s.bookingService.CancelBooking(ctx, service.CancelBookingInput{
+		BookingID: req.GetBookingId(),
+		Reason:    req.GetReason(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.CancelBookingResponse{
+		BookingId: booking.BookingID,
+		Status:    mapStatus(booking.Status),
+		UpdatedAt: timestamppb.New(booking.UpdatedAt),
+	}, nil
+}
+
 func (s *Server) GetBooking(ctx context.Context, req *pb.GetBookingRequest) (*pb.GetBookingResponse, error) {
 	details, err := s.bookingService.GetBooking(ctx, req.GetBookingId())
 	if err != nil {
@@ -47,6 +63,22 @@ func (s *Server) GetBooking(ctx context.Context, req *pb.GetBookingRequest) (*pb
 	return &pb.GetBookingResponse{
 		Booking: mapBooking(details.Booking),
 		Events:  mapEvents(details.Events),
+	}, nil
+}
+
+func (s *Server) ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingRequest) (*pb.ConfirmBookingResponse, error) {
+	booking, err := s.bookingService.ConfirmBooking(ctx, service.ConfirmBookingInput{
+		BookingID: req.GetBookingId(),
+		PaymentID: req.GetPaymentId(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.ConfirmBookingResponse{
+		BookingId: booking.BookingID,
+		Status:    mapStatus(booking.Status),
+		UpdatedAt: timestamppb.New(booking.UpdatedAt),
 	}, nil
 }
 

@@ -23,6 +23,14 @@ func (f *fakeBookingService) CreateBooking(_ context.Context, input service.Crea
 	}, nil
 }
 
+func (f *fakeBookingService) CancelBooking(_ context.Context, input service.CancelBookingInput) (service.Booking, error) {
+	return service.Booking{BookingID: input.BookingID, Status: service.StatusCancelled}, nil
+}
+
+func (f *fakeBookingService) ConfirmBooking(_ context.Context, input service.ConfirmBookingInput) (service.Booking, error) {
+	return service.Booking{BookingID: input.BookingID, PaymentID: input.PaymentID, Status: service.StatusConfirmed}, nil
+}
+
 func (f *fakeBookingService) GetBooking(_ context.Context, bookingID string) (service.BookingDetails, error) {
 	f.lastID = bookingID
 	return service.BookingDetails{

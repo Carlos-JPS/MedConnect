@@ -28,10 +28,24 @@ func main() {
 	}
 	defer repo.Close()
 
-	_ = availabilityclient.NewNoopClient()
-	_ = paymentclient.NewNoopClient()
+	availabilityClient, err := availabilityclient.NewGRPCClient(cfg.AvailabilityServiceTarget)
+	if err != nil {
+		log.Fatalf("error al inicializar cliente availability-service: %v", err)
+	}
+	defer availabilityClient.Close()
 
-	bookingService := service.NewBookingService(repo)
+	paymentClient, err := paymentclient.NewGRPCClient(cfg.PaymentServiceTarget)
+	if err != nil {
+		log.Fatalf("error al inicializar cliente payment-service: %v", err)
+	}
+	defer paymentClient.Close()
+
+	bookingService := service.NewBookingService(
+		repo,
+		service.WithAvailabilityClient(availabilityClient),
+		service.WithPaymentClient(paymentClient),
+		service.WithExternalCallTimeout(cfg.ExternalCallTimeout),
+	)
 	server := googlegrpc.NewServer()
 	pb.RegisterBookingServiceServer(server, grpcserver.NewServer(bookingService))
 

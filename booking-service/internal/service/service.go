@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const defaultReservationTTL = 15 * time.Minute
+const defaultExternalCallTimeout = 3 * time.Second
 
 type Status int
 
@@ -67,6 +70,16 @@ type CreateBookingInput struct {
 	Notes     string
 }
 
+type CancelBookingInput struct {
+	BookingID string
+	Reason    string
+}
+
+type ConfirmBookingInput struct {
+	BookingID string
+	PaymentID string
+}
+
 type UpdateBookingStatusInput struct {
 	BookingID        string
 	Status           Status
@@ -76,6 +89,45 @@ type UpdateBookingStatusInput struct {
 	ConfirmedAt      *time.Time
 	CancelledAt      *time.Time
 	Event            BookingEvent
+}
+
+type HoldSlotInput struct {
+	SlotID    string
+	BookingID string
+	HeldUntil time.Time
+}
+
+type ReleaseHeldSlotInput struct {
+	SlotID    string
+	BookingID string
+}
+
+type ConfirmSlotBookingInput struct {
+	SlotID    string
+	BookingID string
+}
+
+type PaymentStatus string
+
+const (
+	PaymentStatusUnspecified PaymentStatus = ""
+	PaymentStatusPending     PaymentStatus = "PENDING"
+	PaymentStatusApproved    PaymentStatus = "APPROVED"
+	PaymentStatusCompleted   PaymentStatus = "COMPLETED"
+	PaymentStatusRejected    PaymentStatus = "REJECTED"
+	PaymentStatusRefunded    PaymentStatus = "REFUNDED"
+)
+
+var ErrExternalDependency = errors.New("fallo en dependencia externa")
+
+type AvailabilityClient interface {
+	HoldSlot(ctx context.Context, input HoldSlotInput) error
+	ReleaseHeldSlot(ctx context.Context, input ReleaseHeldSlotInput) error
+	ConfirmSlotBooking(ctx context.Context, input ConfirmSlotBookingInput) error
+}
+
+type PaymentClient interface {
+	GetPaymentStatus(ctx context.Context, paymentID string) (PaymentStatus, error)
 }
 
 type Repository interface {
@@ -88,14 +140,19 @@ type Repository interface {
 
 type BookingService interface {
 	CreateBooking(ctx context.Context, input CreateBookingInput) (Booking, error)
+	CancelBooking(ctx context.Context, input CancelBookingInput) (Booking, error)
+	ConfirmBooking(ctx context.Context, input ConfirmBookingInput) (Booking, error)
 	GetBooking(ctx context.Context, bookingID string) (BookingDetails, error)
 	ListBookingsByPatient(ctx context.Context, patientID string, status Status) ([]Booking, error)
 	UpdateBookingStatus(ctx context.Context, input UpdateBookingStatusInput) (Booking, error)
 }
 
 type bookingService struct {
-	repo  Repository
-	clock func() time.Time
+	repo                Repository
+	clock               func() time.Time
+	availability        AvailabilityClient
+	payment             PaymentClient
+	externalCallTimeout time.Duration
 }
 
 type Option func(*bookingService)
@@ -106,10 +163,31 @@ func WithClock(clock func() time.Time) Option {
 	}
 }
 
+func WithAvailabilityClient(client AvailabilityClient) Option {
+	return func(s *bookingService) {
+		s.availability = client
+	}
+}
+
+func WithPaymentClient(client PaymentClient) Option {
+	return func(s *bookingService) {
+		s.payment = client
+	}
+}
+
+func WithExternalCallTimeout(timeout time.Duration) Option {
+	return func(s *bookingService) {
+		s.externalCallTimeout = timeout
+	}
+}
+
 func NewBookingService(repo Repository, opts ...Option) BookingService {
 	service := &bookingService{
-		repo:  repo,
-		clock: time.Now,
+		repo:                repo,
+		clock:               time.Now,
+		availability:        noopAvailabilityClient{},
+		payment:             noopPaymentClient{},
+		externalCallTimeout: defaultExternalCallTimeout,
 	}
 	for _, opt := range opts {
 		opt(service)
@@ -131,6 +209,17 @@ func (s *bookingService) CreateBooking(ctx context.Context, input CreateBookingI
 		UpdatedAt:     now,
 		ReservedUntil: now.Add(defaultReservationTTL),
 	}
+
+	externalCtx, cancel := s.externalContext(ctx)
+	defer cancel()
+	if err := s.availability.HoldSlot(externalCtx, HoldSlotInput{
+		SlotID:    input.SlotID,
+		BookingID: bookingID,
+		HeldUntil: booking.ReservedUntil,
+	}); err != nil {
+		return Booking{}, fmt.Errorf("%w: hold slot: %v", ErrExternalDependency, err)
+	}
+
 	payload, err := json.Marshal(map[string]string{
 		"status":  "PENDING_PAYMENT",
 		"slot_id": input.SlotID,
@@ -147,6 +236,97 @@ func (s *bookingService) CreateBooking(ctx context.Context, input CreateBookingI
 	}
 
 	return s.repo.CreateBooking(ctx, booking, event)
+}
+
+func (s *bookingService) CancelBooking(ctx context.Context, input CancelBookingInput) (Booking, error) {
+	booking, err := s.repo.GetBooking(ctx, input.BookingID)
+	if err != nil {
+		return Booking{}, err
+	}
+
+	externalCtx, cancel := s.externalContext(ctx)
+	defer cancel()
+	if err := s.availability.ReleaseHeldSlot(externalCtx, ReleaseHeldSlotInput{
+		SlotID:    booking.SlotID,
+		BookingID: booking.BookingID,
+	}); err != nil {
+		return Booking{}, fmt.Errorf("%w: release held slot: %v", ErrExternalDependency, err)
+	}
+
+	now := s.clock().UTC()
+	payload, err := json.Marshal(map[string]string{
+		"reason": input.Reason,
+		"status": "CANCELLED",
+	})
+	if err != nil {
+		return Booking{}, err
+	}
+
+	return s.repo.UpdateBookingStatus(ctx, UpdateBookingStatusInput{
+		BookingID:   booking.BookingID,
+		Status:      StatusCancelled,
+		UpdatedAt:   now,
+		CancelledAt: &now,
+		Event: BookingEvent{
+			EventID:   uuid.NewString(),
+			BookingID: booking.BookingID,
+			EventType: EventCancelled,
+			Payload:   payload,
+			CreatedAt: now,
+		},
+	})
+}
+
+func (s *bookingService) ConfirmBooking(ctx context.Context, input ConfirmBookingInput) (Booking, error) {
+	booking, err := s.repo.GetBooking(ctx, input.BookingID)
+	if err != nil {
+		return Booking{}, err
+	}
+
+	externalCtx, cancel := s.externalContext(ctx)
+	defer cancel()
+	paymentStatus, err := s.payment.GetPaymentStatus(externalCtx, input.PaymentID)
+	if err != nil {
+		return Booking{}, fmt.Errorf("%w: validar pago: %v", ErrExternalDependency, err)
+	}
+	if !paymentStatus.IsApproved() {
+		return Booking{}, fmt.Errorf("pago %s no aprobado: %s", input.PaymentID, paymentStatus)
+	}
+
+	externalCtx, cancel = s.externalContext(ctx)
+	defer cancel()
+	if err := s.availability.ConfirmSlotBooking(externalCtx, ConfirmSlotBookingInput{
+		SlotID:    booking.SlotID,
+		BookingID: booking.BookingID,
+	}); err != nil {
+		return Booking{}, fmt.Errorf("%w: confirmar slot: %v", ErrExternalDependency, err)
+	}
+
+	now := s.clock().UTC()
+	confirmationCode := "MED-" + booking.BookingID[:min(len(booking.BookingID), 8)]
+	payload, err := json.Marshal(map[string]string{
+		"payment_id": input.PaymentID,
+		"status":     "CONFIRMED",
+	})
+	if err != nil {
+		return Booking{}, err
+	}
+
+	return s.repo.UpdateBookingStatus(ctx, UpdateBookingStatusInput{
+		BookingID:        booking.BookingID,
+		Status:           StatusConfirmed,
+		PaymentID:        input.PaymentID,
+		ConfirmationCode: confirmationCode,
+		UpdatedAt:        now,
+		ConfirmedAt:      &now,
+		Event: BookingEvent{
+			EventID:   uuid.NewString(),
+			BookingID: booking.BookingID,
+			EventType: EventConfirmed,
+			Payload:   payload,
+			CreatedAt: now,
+		},
+	})
 }
 
 func (s *bookingService) GetBooking(ctx context.Context, bookingID string) (BookingDetails, error) {
@@ -171,4 +351,35 @@ func (s *bookingService) UpdateBookingStatus(ctx context.Context, input UpdateBo
 		input.UpdatedAt = s.clock().UTC()
 	}
 	return s.repo.UpdateBookingStatus(ctx, input)
+}
+
+func (s *bookingService) externalContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s.externalCallTimeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, s.externalCallTimeout)
+}
+
+func (status PaymentStatus) IsApproved() bool {
+	return status == PaymentStatusApproved || status == PaymentStatusCompleted
+}
+
+type noopAvailabilityClient struct{}
+
+func (noopAvailabilityClient) HoldSlot(context.Context, HoldSlotInput) error {
+	return nil
+}
+
+func (noopAvailabilityClient) ReleaseHeldSlot(context.Context, ReleaseHeldSlotInput) error {
+	return nil
+}
+
+func (noopAvailabilityClient) ConfirmSlotBooking(context.Context, ConfirmSlotBookingInput) error {
+	return nil
+}
+
+type noopPaymentClient struct{}
+
+func (noopPaymentClient) GetPaymentStatus(context.Context, string) (PaymentStatus, error) {
+	return PaymentStatusApproved, nil
 }
