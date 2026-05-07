@@ -9,6 +9,7 @@ services:
       - "8080:8080"
     depends_on:
       - payment-service
+      - availability-service
     networks:
       - medconnect-net
 
@@ -42,10 +43,40 @@ services:
     networks:
       - medconnect-net
 
- 
+  availability-service:
+    build:
+      context: ./availability-service
+      dockerfile: Dockerfile
+    container_name: availability-service
+    env_file: ./availability-service/.env
+    depends_on:
+      availability-db:
+        condition: service_healthy
+    networks:
+      - medconnect-net
+
+  availability-db:
+    image: postgres:15
+    container_name: availability-db
+    environment:
+      POSTGRES_USER: ${AVAILABILITY_DB_USER}
+      POSTGRES_PASSWORD: ${AVAILABILITY_DB_PASSWORD}
+      POSTGRES_DB: ${AVAILABILITY_DB_NAME}
+    volumes:
+      - availability-db-data:/var/lib/postgresql/data
+      - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER} -d ${AVAILABILITY_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - medconnect-net
+
 volumes:
   payments-db-data:
- 
+  availability-db-data:
+
 networks:
   medconnect-net:
     driver: bridge
