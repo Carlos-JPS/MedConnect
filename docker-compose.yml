@@ -2,7 +2,7 @@ services:
  
   payment-service:
     build:
-      context: .
+      context: ./payment-service
       dockerfile: Dockerfile
     container_name: payment-service
     env_file: .env
