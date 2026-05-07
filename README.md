@@ -1,87 +1,252 @@
 # MedConnect
 
-**Sistema de Gestión Clínica Hospitalaria Basado en Microservicios con Go y FastAPI**
+Sistema de gestion clinica hospitalaria basado en microservicios. Para esta entrega, el flujo implementado y defendible del repositorio se concentra en reservas medicas y pagos usando:
 
-MedConnect es una plataforma médica integral diseñada para optimizar la gestión clínica en entornos hospitalarios. Utilizando una arquitectura de microservicios moderna, el sistema permite la administración centralizada de pacientes, citas, historias clínicas, medicamentos, imágenes diagnósticas y pagos, todo ello soportado por una infraestructura robusta y escalable.
+`frontend -> api-gateway HTTP -> booking-service/payment-service gRPC -> PostgreSQL`
 
-## 🚀 Características Principales
+## Arquitectura Actual
 
-### 🏥 Gestión Clínica Integral
-- **Pacientes**: Registro completo, historial médico y seguimiento personalizado.
-- **Citas Médicas**: Programación, recordatorios y gestión de consultas.
-- **Historias Clínicas**: Evolución médica digitalizada, diagnósticos y tratamientos.
+- **frontend**: cliente web React para demostrar el flujo de reservas desde navegador.
+- **api-gateway**: unica entrada HTTP externa. Expone endpoints REST de reservas y pagos.
+- **booking-service**: servicio gRPC de reservas. Persiste citas y eventos en PostgreSQL.
+- **payment-service**: servicio gRPC de pagos. Persiste pagos, transacciones y reembolsos en PostgreSQL.
+- **booking_db**: base PostgreSQL de reservas.
+- **payments-db**: base PostgreSQL de pagos.
 
-### 📋 Administración Hospitalaria
-- **Medicamentos**: Inventario y dispensación controlada.
-- **Imágenes Diagnósticas**: Carga, visualización y gestión de estudios radiológicos.
-- **Recursos Humanos**: Control de personal médico y administrativo.
+Servicios como `availability-service` todavia no estan completos en este repositorio. `booking-service` ya tiene cliente gRPC y manejo de errores para esa dependencia, pero los casos `CreateBooking`, `CancelBooking` y `ConfirmBooking` requieren que availability implemente `HoldSlot`, `ReleaseHeldSlot` y `ConfirmSlotBooking` para una demo end-to-end completa.
 
-### 💳 Sistema de Pagos
-- **Pagos Integrados**: Módulo de pago seguro para servicios médicos.
-- **Facturación**: Generación de facturas electrónicas.
+## Puertos
 
-## 🛠️ Arquitectura y Tecnologías
+- Frontend: `http://localhost:5173`
+- API Gateway: `http://localhost:8080`
+- `booking-service`: gRPC interno `50051`
+- `payment-service`: gRPC interno `50051`
 
-### Microservicios
-El sistema está compuesto por múltiples servicios especializados, cada uno responsable de una funcionalidad específica:
-- **Gateway Service**: Orquestación centralizada y API unificada (Go).
-- **Patient Service**: Gestión de pacientes y registros médicos (FastAPI).
-- **Appointment Service**: Administración de citas (FastAPI).
-- **Billing Service**: Facturación y cobros (FastAPI).
-- **Payment Service**: Procesamiento de pagos (FastAPI).
+Solo el frontend y el API Gateway se exponen al host. Los servicios internos se comunican por la red Docker `medconnect_internal`.
 
-### Stack Tecnológico
-- **Backend**: Go (Golang) y Python (FastAPI).
-- **Orquestación**: Docker y Docker Compose.
-- **Base de Datos**: PostgreSQL con soporte para PostgreSQL Native UUIDs.
-- **RPC**: gRPC para comunicación inter-servicio.
-- **API REST**: Endpoints RESTful para clientes web y móviles.
+## Requisitos
 
-## 📦 Instalación y Ejecución
-
-### Requisitos Previos
 - Docker
 - Docker Compose V2
 
-### Ejecución del Sistema
-Para iniciar todos los servicios con Docker Compose:
+No es necesario tener Go o Node instalados localmente para levantar la demo con Docker.
+
+## Configuracion
+
+Usa `.env.example` como referencia:
+
+```bash
+cp .env.example .env
+```
+
+Variables principales:
+
+```bash
+BOOKING_DB_DSN=postgres://booking:booking_password@booking_db:5432/booking_db?sslmode=disable
+AVAILABILITY_SERVICE_TARGET=availability-service:50051
+PAYMENT_SERVICE_TARGET=payment-service:50051
+BOOKING_SERVICE_TARGET=booking-service:50051
+API_GATEWAY_PORT=8080
+FRONTEND_PORT=5173
+VITE_API_BASE_URL=/api
+```
+
+El frontend usa `/api` para llamar al gateway por el mismo origen del navegador. En Docker, Nginx reenvia `/api/*` hacia `api-gateway:8080`; en desarrollo local, Vite hace el mismo proxy hacia `http://localhost:8080`.
+
+## Levantar el Sistema
+
 ```bash
 docker compose up --build -d
 ```
 
-Para detener todos los servicios:
+Ver contenedores:
+
+```bash
+docker compose ps
+```
+
+Ver logs:
+
+```bash
+docker compose logs -f api-gateway booking-service payment-service
+```
+
+Detener:
+
 ```bash
 docker compose down
 ```
 
-## 📂 Estructura del Proyecto
+Detener y borrar volumenes de datos:
 
+```bash
+docker compose down -v
 ```
+
+## Endpoints de Booking
+
+Todas las rutas entran por `api-gateway`.
+
+### Crear Reserva
+
+```bash
+curl -X POST http://localhost:8080/bookings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+    "doctor_id": "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
+    "slot_id": "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
+    "notes": "Control creado desde demo"
+  }'
+```
+
+Respuesta esperada si `availability-service` esta disponible:
+
+```json
+{
+  "booking_id": "uuid",
+  "status": "PENDING_PAYMENT",
+  "reserved_until": "2026-05-07T12:00:00Z"
+}
+```
+
+Si `availability-service` no esta implementado o no esta levantado, el gateway devuelve un error controlado proveniente de `booking-service`.
+
+### Listar Reservas de Paciente
+
+```bash
+curl "http://localhost:8080/bookings?patient_id=46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235"
+```
+
+Filtro por estado:
+
+```bash
+curl "http://localhost:8080/bookings?patient_id=46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235&status=PENDING_PAYMENT"
+```
+
+### Obtener Detalle de Reserva
+
+```bash
+curl http://localhost:8080/bookings/{booking_id}
+```
+
+La respuesta incluye la reserva y sus eventos persistidos.
+
+### Confirmar Reserva
+
+Primero debe existir un pago aprobado o completado en `payment-service`.
+
+```bash
+curl -X POST http://localhost:8080/bookings/{booking_id}/confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payment_id": "{payment_id}"
+  }'
+```
+
+`booking-service` valida el pago por gRPC contra `payment-service` y luego solicita confirmar el slot a `availability-service`.
+
+### Cancelar Reserva
+
+```bash
+curl -X PATCH http://localhost:8080/bookings/{booking_id}/cancel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Paciente solicita reagendar"
+  }'
+```
+
+`booking-service` libera el slot por gRPC contra `availability-service` antes de persistir la cancelacion.
+
+## Endpoints de Payment
+
+### Crear Pago
+
+```bash
+curl -X POST http://localhost:8080/payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "booking_id": "{booking_id}",
+    "user_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+    "amount": 15000,
+    "currency": "CLP"
+  }'
+```
+
+### Procesar Pago
+
+```bash
+curl -X POST http://localhost:8080/payments/{payment_id}/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payment_method_id": "method-demo"
+  }'
+```
+
+### Consultar Pago
+
+```bash
+curl http://localhost:8080/payments/{payment_id}
+```
+
+## Demo Recomendada
+
+1. Levantar el sistema con `docker compose up --build -d`.
+2. Abrir `http://localhost:5173`.
+3. Seleccionar un slot demo en el frontend.
+4. Crear una reserva desde el frontend o Insomnia.
+5. Listar reservas del paciente.
+6. Consultar detalle y eventos de la reserva.
+7. Crear y procesar un pago desde Insomnia.
+8. Confirmar la reserva con el `payment_id`.
+9. Cancelar una reserva y verificar el cambio de estado.
+
+Mientras `availability-service` no exista, los pasos que reservan, confirman o liberan slots sirven para demostrar resiliencia y traduccion de errores, pero no para completar el flujo end-to-end exitoso.
+
+## Pruebas con Insomnia
+
+El archivo `Insomnia_2026-05-07.yaml` incluye carpetas para:
+
+- `Bookings`
+- `Payments`
+
+Importa el archivo en Insomnia y usa el ambiente base con `base_url = http://localhost:8080`.
+
+## Verificacion Tecnica
+
+Comandos utiles:
+
+```bash
+docker compose config
+docker compose build api-gateway booking-service payment-service frontend
+docker run --rm -v "$PWD":/workspace -w /workspace/booking-service golang:1.26-alpine go test ./...
+docker run --rm -v "$PWD":/workspace -w /workspace/api-gateway golang:1.26-alpine go test ./...
+```
+
+## Estructura Relevante
+
+```text
 MedConnect/
-├── docker-compose.yml              # Configuración de Docker Compose
-├── .gitignore                      # Archivos ignorados por Git
-├── .env                            # Variables de entorno (crear manualmente)
-├── Insomnia_2026-05-07.yaml        # Colección de tests en Insomnia
-├── README.md                       # Documentación del proyecto
-├── README_ENG.md                   # English documentation
-├── admin-service/                  # Servicio de administración (Go)
-│   ├── ...
-├── appointment-service/            # Servicio de citas (FastAPI)
-│   ├── ...
-├── billing-service/                # Servicio de facturación (FastAPI)
-│   ├── ...
-├── gateway-service/                # Gateway service (Go)
-│   ├── ...
-├── payment-service/                # Servicio de pagos (FastAPI)
-│   ├── ...
-└── patient-service/                # Servicio de pacientes (FastAPI)
-    ├── ...
+├── api-gateway/                    # Gateway HTTP unificado
+├── booking-service/                # Servicio gRPC de reservas
+├── frontend/                       # Cliente web React
+├── payment-service/                # Servicio gRPC de pagos
+├── docker-compose.yml
+├── .env.example
+└── Insomnia_2026-05-07.yaml
 ```
 
-## 🤝 Contribuciones
+## Estado de Entrega
 
-Este proyecto es el resultado del trabajo colaborativo entre estudiantes de ingeniería informática.
+Implementado:
 
-## 📝 Licencia
+- Contrato gRPC de reservas.
+- Persistencia de reservas y eventos.
+- API Gateway para reservas y pagos.
+- Frontend minimo para flujo paciente.
+- Docker Compose con bases de reservas y pagos.
+- Cliente de pagos de `booking-service` alineado con el contrato real de `payment-service`.
 
-Propiedad intelectual del proyecto desarrollado para la asignatura de Sistemas Distribuidos, Universidad de La Frontera (UFRO).
+Pendiente por dependencia externa:
+
+- `availability-service` real para completar `HoldSlot`, `ReleaseHeldSlot` y `ConfirmSlotBooking`.

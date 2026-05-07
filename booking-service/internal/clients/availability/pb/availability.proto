@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package availability;
+
+option go_package = "github.com/MedConnect/booking-service/internal/clients/availability/pb";
+
+import "google/protobuf/timestamp.proto";
+
+message HoldSlotRequest {
+  string slot_id = 1;
+  string booking_id = 2;
+  google.protobuf.Timestamp held_until = 3;
+}
+
+message HoldSlotResponse {
+  string slot_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp held_until = 3;
+  string booking_id = 4;
+}
+
+message ConfirmSlotBookingRequest {
+  string slot_id = 1;
+  string booking_id = 2;
+}
+
+message ConfirmSlotBookingResponse {
+  string slot_id = 1;
+  string status = 2;
+  string booking_id = 3;
+}
+
+message ReleaseHeldSlotRequest {
+  string slot_id = 1;
+  string booking_id = 2;
+}
+
+message ReleaseHeldSlotResponse {
+  string slot_id = 1;
+  string status = 2;
+}
+
+service AvailabilityService {
+  rpc HoldSlot(HoldSlotRequest) returns (HoldSlotResponse);
+  rpc ConfirmSlotBooking(ConfirmSlotBookingRequest) returns (ConfirmSlotBookingResponse);
+  rpc ReleaseHeldSlot(ReleaseHeldSlotRequest) returns (ReleaseHeldSlotResponse);
+}
