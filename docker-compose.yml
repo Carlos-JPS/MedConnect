@@ -1,0 +1,41 @@
+services:
+ 
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment-service
+    env_file: .env
+    ports:
+      - "${GRPC_PORT}:${GRPC_PORT}"
+    depends_on:
+      payments-db:
+        condition: service_healthy
+    networks:
+      - payments-net
+ 
+  payments-db:
+    image: postgres:15
+    container_name: payments-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - payments-db-data:/var/lib/postgresql/data
+      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payments-net
+ 
+volumes:
+  payments-db-data:
+ 
+networks:
+  payments-net:
+    driver: bridge
+ 
