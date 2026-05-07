@@ -1,0 +1,11 @@
+.git
+.env
+*.local
+**/main
+**/server
+**/*.test
+**/*.out
+**/vendor
+**/node_modules
+**/dist
+**/coverage

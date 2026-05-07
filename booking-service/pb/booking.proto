@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package booking;
+
+option go_package = "github.com/MedConnect/booking-service/pb";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+enum BookingStatus {
+  BOOKING_STATUS_UNSPECIFIED = 0;
+  BOOKING_STATUS_PENDING_PAYMENT = 1;
+  BOOKING_STATUS_CONFIRMED = 2;
+  BOOKING_STATUS_CANCELLED = 3;
+  BOOKING_STATUS_EXPIRED = 4;
+}
+
+enum BookingEventType {
+  BOOKING_EVENT_TYPE_UNSPECIFIED = 0;
+  BOOKING_EVENT_TYPE_CREATED = 1;
+  BOOKING_EVENT_TYPE_PAYMENT_APPROVED = 2;
+  BOOKING_EVENT_TYPE_CONFIRMED = 3;
+  BOOKING_EVENT_TYPE_CANCELLED = 4;
+  BOOKING_EVENT_TYPE_EXPIRED = 5;
+}
+
+message Booking {
+  string booking_id = 1;
+  string patient_id = 2;
+  string doctor_id = 3;
+  string slot_id = 4;
+  BookingStatus status = 5;
+  string payment_id = 6;
+  string confirmation_code = 7;
+  string notes = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp reserved_until = 11;
+  google.protobuf.Timestamp confirmed_at = 12;
+  google.protobuf.Timestamp cancelled_at = 13;
+}
+
+message BookingEvent {
+  string event_id = 1;
+  string booking_id = 2;
+  BookingEventType event_type = 3;
+  google.protobuf.Struct payload = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message CreateBookingRequest {
+  string patient_id = 1;
+  string slot_id = 2;
+  string doctor_id = 3;
+  string notes = 4;
+}
+message CreateBookingResponse {
+  string booking_id = 1;
+  BookingStatus status = 2;
+  google.protobuf.Timestamp reserved_until = 3;
+}
+
+message CancelBookingRequest {
+  string booking_id = 1;
+  string reason = 2;
+}
+message CancelBookingResponse {
+  string booking_id = 1;
+  BookingStatus status = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message GetBookingRequest {
+  string booking_id = 1;
+}
+message GetBookingResponse {
+  Booking booking = 1;
+  repeated BookingEvent events = 2;
+}
+
+message ListBookingsByPatientRequest {
+  string patient_id = 1;
+  BookingStatus status = 2;
+}
+message ListBookingsByPatientResponse {
+  repeated Booking bookings = 1;
+}
+
+message ConfirmBookingRequest {
+  string booking_id = 1;
+  string payment_id = 2;
+}
+message ConfirmBookingResponse {
+  string booking_id = 1;
+  BookingStatus status = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+service BookingService {
+  rpc CreateBooking         (CreateBookingRequest)         returns (CreateBookingResponse);
+  rpc CancelBooking         (CancelBookingRequest)         returns (CancelBookingResponse);
+  rpc GetBooking            (GetBookingRequest)            returns (GetBookingResponse);
+  rpc ListBookingsByPatient (ListBookingsByPatientRequest) returns (ListBookingsByPatientResponse);
+  rpc ConfirmBooking        (ConfirmBookingRequest)        returns (ConfirmBookingResponse);
+}

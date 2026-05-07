@@ -12,9 +12,15 @@ server
 
 # Archivos de salida de coverage
 *.out
+coverage/
 
 # Directorio de dependencias (para proyectos que usan vendor)
 vendor/
+node_modules/
+
+# Artefactos frontend
+dist/
+*.tsbuildinfo
 
 # Archivos de entorno y variables secretas
 .env

@@ -1,47 +1,107 @@
 services:
-  gateway-service:
+  api-gateway:
     build:
-      context: ./gateway-service
-      dockerfile: Dockerfile
-    container_name: gateway-service
-    env_file: ./gateway-service/.env
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    environment:
+      API_GATEWAY_HOST: ${API_GATEWAY_HOST:-0.0.0.0}
+      API_GATEWAY_PORT: ${API_GATEWAY_PORT:-8080}
+      API_GATEWAY_REQUEST_TIMEOUT: ${API_GATEWAY_REQUEST_TIMEOUT:-5s}
+      BOOKING_SERVICE_TARGET: ${BOOKING_SERVICE_TARGET:-booking-service:50051}
+      PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
+      AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_PORT:-8080}:${API_GATEWAY_PORT:-8080}"
     depends_on:
+      - booking-service
       - payment-service
       - availability-service
     networks:
-      - medconnect-net
+      - medconnect_internal
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - medconnect_internal
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: booking-service/Dockerfile
+    environment:
+      BOOKING_SERVICE_HOST: ${BOOKING_SERVICE_HOST:-0.0.0.0}
+      BOOKING_SERVICE_PORT: ${BOOKING_SERVICE_PORT:-50051}
+      BOOKING_DB_DSN: ${BOOKING_DB_DSN:-postgres://booking:booking_password@booking_db:5432/booking_db?sslmode=disable}
+      AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
+      PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
+      BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+    expose:
+      - "${BOOKING_SERVICE_PORT:-50051}"
+    depends_on:
+      booking_db:
+        condition: service_healthy
+    networks:
+      - medconnect_internal
+
+  booking_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${BOOKING_DB_NAME:-booking_db}
+      POSTGRES_USER: ${BOOKING_DB_USER:-booking}
+      POSTGRES_PASSWORD: ${BOOKING_DB_PASSWORD:-booking_password}
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+      - ./booking-service/migrations/000001_create_booking_tables.up.sql:/docker-entrypoint-initdb.d/001_create_booking_tables.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOKING_DB_USER:-booking} -d ${BOOKING_DB_NAME:-booking_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medconnect_internal
 
   payment-service:
     build:
       context: ./payment-service
       dockerfile: Dockerfile
-    container_name: payment-service
-    env_file: ./payment-service/.env
+    environment:
+      DB_HOST: payments-db
+      DB_PORT: 5432
+      DB_USER: ${PAYMENTS_DB_USER:-postgres}
+      DB_PASSWORD: ${PAYMENTS_DB_PASSWORD:-postgres}
+      DB_NAME: ${PAYMENTS_DB_NAME:-payments_db}
+      GRPC_PORT: ${PAYMENT_SERVICE_PORT:-50051}
+    expose:
+      - "${PAYMENT_SERVICE_PORT:-50051}"
     depends_on:
       payments-db:
         condition: service_healthy
     networks:
-      - medconnect-net
+      - medconnect_internal
 
   payments-db:
-    image: postgres:15
-    container_name: payments-db
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${PAYMENTS_DB_USER}
-      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD}
-      POSTGRES_DB: ${PAYMENTS_DB_NAME}
+      POSTGRES_USER: ${PAYMENTS_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${PAYMENTS_DB_NAME:-payments_db}
     volumes:
-      - payments-db-data:/var/lib/postgresql/data
-      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - payments_db_data:/var/lib/postgresql/data
+      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PAYMENTS_DB_USER} -d ${PAYMENTS_DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PAYMENTS_DB_USER:-postgres} -d ${PAYMENTS_DB_NAME:-payments_db}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     networks:
-      - medconnect-net
+      - medconnect_internal
 
   availability-service:
     build:
@@ -53,7 +113,7 @@ services:
       availability-db:
         condition: service_healthy
     networks:
-      - medconnect-net
+      - medconnect_internal
 
   availability-db:
     image: postgres:15
@@ -71,13 +131,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - medconnect-net
+      - medconnect_internal
 
 volumes:
-  payments-db-data:
   availability-db-data:
+  booking_db_data:
+  payments_db_data:
 
 networks:
-  medconnect-net:
+  medconnect_internal:
     driver: bridge
- 
