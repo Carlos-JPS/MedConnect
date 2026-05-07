@@ -24,6 +24,8 @@ dist/
 
 # Archivos de entorno y variables secretas
 .env
+.env.prod
+.env.dev
 *.local
 
 # Archivos de IDE y sistema operativo
@@ -33,3 +35,6 @@ dist/
 *~
 .DS_Store
 Thumbs.db
+
+node_modules/
+dist/

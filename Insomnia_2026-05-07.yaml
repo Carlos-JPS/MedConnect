@@ -1,0 +1,173 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: MedConnect
+meta:
+  id: wrk_c98515bacb6c484793393fdcadb9dbfa
+  created: 1778128101262
+  modified: 1778128101262
+  description: ""
+collection:
+  - name: Payments
+    meta:
+      id: fld_a1225dda93eb47b881f84c5c26f8c3f0
+      created: 1778128210470
+      modified: 1778128229155
+      sortKey: -1778128210470
+      description: ""
+    children:
+      - url: http://localhost:8080/payments
+        name: Create Payment
+        meta:
+          id: req_4c70f22790534881ad3d939fb67b82ee
+          created: 1778128115521
+          modified: 1778128223348
+          isPrivate: false
+          description: ""
+          sortKey: -1778128223317
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "booking_id": "4a6a634c-fc57-4910-b641-c9c5d64baf2d",
+              "user_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+              "amount": 15000,
+              "currency": "CLP"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/payments/b7d8f1b0-af07-4e57-8859-e929aa77e2fc/process
+        name: Process Payment
+        meta:
+          id: req_068ad3fda3d947edb11d04ad14fa9c0e
+          created: 1778128230036
+          modified: 1778128304431
+          isPrivate: false
+          description: ""
+          sortKey: -1778128230036
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "payment_method_id": "ecdab927-536c-4752-a1ca-c6e8ffea7838"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/payments/b7d8f1b0-af07-4e57-8859-e929aa77e2fc
+        name: Get Payment By Id
+        meta:
+          id: req_5cd4e843e950421aa0bb371a0c9883ec
+          created: 1778128320462
+          modified: 1778128354654
+          isPrivate: false
+          description: ""
+          sortKey: -1778128223217
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/payments/user/46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235
+        name: Get User Payments
+        meta:
+          id: req_4df2ade037244c13a77ca2b22845cd86
+          created: 1778128387951
+          modified: 1778128417610
+          isPrivate: false
+          description: ""
+          sortKey: -1778128223117
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/payments/b7d8f1b0-af07-4e57-8859-e929aa77e2fc/refund
+        name: Process Refund
+        meta:
+          id: req_b79db07831ef4b4ea0b2abe2489f2344
+          created: 1778128447282
+          modified: 1778128517804
+          isPrivate: false
+          description: ""
+          sortKey: -1778128223017
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "amount": 15000,
+              "reason": "Paciente canceló la hora"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            description: ""
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_61b8f479f102539bd762570c1cc64b25325ed1fc
+    created: 1778128101263
+    modified: 1778128101263
+environments:
+  name: Base Environment
+  meta:
+    id: env_61b8f479f102539bd762570c1cc64b25325ed1fc
+    created: 1778128101263
+    modified: 1778128101263
+    isPrivate: false

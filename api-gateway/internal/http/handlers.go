@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/MedConnect/booking-service/pb"
+	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -23,12 +24,26 @@ type BookingClient interface {
 	ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingRequest) (*pb.ConfirmBookingResponse, error)
 }
 
-type Handler struct {
-	booking BookingClient
+type PaymentClient interface {
+	CreatePayment(ctx context.Context, req *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error)
+	ProcessPayment(ctx context.Context, req *paymentpb.ProcessPaymentRequest) (*paymentpb.ProcessPaymentResponse, error)
+	GetPayment(ctx context.Context, req *paymentpb.GetPaymentRequest) (*paymentpb.GetPaymentResponse, error)
+	GetPaymentsByUser(ctx context.Context, req *paymentpb.GetPaymentsByUserRequest) (*paymentpb.GetPaymentsByUserResponse, error)
+	GetPaymentByBooking(ctx context.Context, req *paymentpb.GetPaymentByBookingRequest) (*paymentpb.GetPaymentByBookingResponse, error)
+	RefundPayment(ctx context.Context, req *paymentpb.RefundPaymentRequest) (*paymentpb.RefundPaymentResponse, error)
 }
 
-func NewHandler(booking BookingClient) *Handler {
-	return &Handler{booking: booking}
+type Handler struct {
+	booking BookingClient
+	payment PaymentClient
+}
+
+func NewHandler(booking BookingClient, payment ...PaymentClient) *Handler {
+	handler := &Handler{booking: booking}
+	if len(payment) > 0 {
+		handler.payment = payment[0]
+	}
+	return handler
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,6 +58,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.cancelBooking(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/bookings/") && strings.HasSuffix(r.URL.Path, "/confirm"):
 		h.confirmBooking(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/payments":
+		h.createPayment(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/payments/") && strings.HasSuffix(r.URL.Path, "/process"):
+		h.processPayment(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/payments/") && strings.HasSuffix(r.URL.Path, "/refund"):
+		h.refundPayment(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/payments/user/"):
+		h.getPaymentsByUser(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/payments/booking/"):
+		h.getPaymentByBooking(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/payments/"):
+		h.getPayment(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "ruta no encontrada")
 	}
@@ -200,6 +227,194 @@ func (h *Handler) confirmBooking(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type createPaymentRequest struct {
+	BookingID string  `json:"booking_id"`
+	UserID    string  `json:"user_id"`
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency"`
+}
+
+func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	var req createPaymentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.BookingID == "" || req.UserID == "" || req.Amount <= 0 || req.Currency == "" {
+		writeError(w, http.StatusBadRequest, "booking_id, user_id, amount y currency son obligatorios")
+		return
+	}
+
+	resp, err := h.payment.CreatePayment(r.Context(), &paymentpb.CreatePaymentRequest{
+		BookingId: req.BookingID,
+		UserId:    req.UserID,
+		Amount:    req.Amount,
+		Currency:  req.Currency,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, mapPayment(resp.GetPayment()))
+}
+
+type processPaymentRequest struct {
+	PaymentMethodID string `json:"payment_method_id"`
+}
+
+func (h *Handler) processPayment(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	paymentID := paymentIDFromPath(r.URL.Path, "process")
+	if paymentID == "" {
+		writeError(w, http.StatusNotFound, "pago no encontrado")
+		return
+	}
+
+	var req processPaymentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.PaymentMethodID == "" {
+		writeError(w, http.StatusBadRequest, "payment_method_id es obligatorio")
+		return
+	}
+
+	resp, err := h.payment.ProcessPayment(r.Context(), &paymentpb.ProcessPaymentRequest{
+		PaymentId:       paymentID,
+		PaymentMethodId: req.PaymentMethodID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"payment_id":     resp.GetPaymentId(),
+		"transaction_id": resp.GetTransactionId(),
+		"status":         resp.GetStatus(),
+	})
+}
+
+func (h *Handler) getPayment(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	paymentID := paymentIDFromPath(r.URL.Path, "")
+	if paymentID == "" {
+		writeError(w, http.StatusNotFound, "pago no encontrado")
+		return
+	}
+
+	resp, err := h.payment.GetPayment(r.Context(), &paymentpb.GetPaymentRequest{PaymentId: paymentID})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, mapPayment(resp.GetPayment()))
+}
+
+func (h *Handler) getPaymentsByUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	userID := valueAfterPrefix(r.URL.Path, "/payments/user/")
+	if userID == "" {
+		writeError(w, http.StatusNotFound, "usuario no encontrado")
+		return
+	}
+
+	resp, err := h.payment.GetPaymentsByUser(r.Context(), &paymentpb.GetPaymentsByUserRequest{UserId: userID})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	payments := make([]paymentResponse, 0, len(resp.GetPayments()))
+	for _, payment := range resp.GetPayments() {
+		payments = append(payments, mapPayment(payment))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"payments": payments})
+}
+
+func (h *Handler) getPaymentByBooking(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	bookingID := valueAfterPrefix(r.URL.Path, "/payments/booking/")
+	if bookingID == "" {
+		writeError(w, http.StatusNotFound, "booking no encontrado")
+		return
+	}
+
+	resp, err := h.payment.GetPaymentByBooking(r.Context(), &paymentpb.GetPaymentByBookingRequest{BookingId: bookingID})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, mapPayment(resp.GetPayment()))
+}
+
+type refundPaymentRequest struct {
+	Amount float64 `json:"amount"`
+	Reason string  `json:"reason"`
+}
+
+func (h *Handler) refundPayment(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePaymentClient(w) {
+		return
+	}
+
+	paymentID := paymentIDFromPath(r.URL.Path, "refund")
+	if paymentID == "" {
+		writeError(w, http.StatusNotFound, "pago no encontrado")
+		return
+	}
+
+	var req refundPaymentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.Amount <= 0 || req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "amount y reason son obligatorios")
+		return
+	}
+
+	resp, err := h.payment.RefundPayment(r.Context(), &paymentpb.RefundPaymentRequest{
+		PaymentId: paymentID,
+		Amount:    req.Amount,
+		Reason:    req.Reason,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, mapRefund(resp.GetRefund()))
+}
+
+func (h *Handler) requirePaymentClient(w http.ResponseWriter) bool {
+	if h.payment == nil {
+		writeError(w, http.StatusServiceUnavailable, "payment-service no configurado")
+		return false
+	}
+	return true
+}
+
 func bookingIDFromPath(path string, suffix string) string {
 	trimmed := strings.TrimPrefix(path, "/bookings/")
 	if trimmed == path || trimmed == "" {
@@ -212,6 +427,28 @@ func bookingIDFromPath(path string, suffix string) string {
 		return ""
 	}
 	return trimmed
+}
+
+func paymentIDFromPath(path string, suffix string) string {
+	trimmed := strings.TrimPrefix(path, "/payments/")
+	if trimmed == path || trimmed == "" {
+		return ""
+	}
+	if suffix != "" {
+		trimmed = strings.TrimSuffix(trimmed, "/"+suffix)
+	}
+	if strings.Contains(trimmed, "/") {
+		return ""
+	}
+	return trimmed
+}
+
+func valueAfterPrefix(path string, prefix string) string {
+	value := strings.TrimPrefix(path, prefix)
+	if value == path || value == "" || strings.Contains(value, "/") {
+		return ""
+	}
+	return value
 }
 
 type bookingResponse struct {
@@ -259,6 +496,25 @@ type bookingEventResponse struct {
 	CreatedAt string         `json:"created_at,omitempty"`
 }
 
+type paymentResponse struct {
+	PaymentID string  `json:"payment_id"`
+	BookingID string  `json:"booking_id,omitempty"`
+	UserID    string  `json:"user_id,omitempty"`
+	Amount    float64 `json:"amount,omitempty"`
+	Currency  string  `json:"currency,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	CreatedAt string  `json:"created_at,omitempty"`
+}
+
+type refundResponse struct {
+	RefundID  string  `json:"refund_id"`
+	PaymentID string  `json:"payment_id"`
+	Amount    float64 `json:"amount,omitempty"`
+	Reason    string  `json:"reason,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	CreatedAt string  `json:"created_at,omitempty"`
+}
+
 func mapEvent(event *pb.BookingEvent) bookingEventResponse {
 	if event == nil {
 		return bookingEventResponse{}
@@ -273,6 +529,35 @@ func mapEvent(event *pb.BookingEvent) bookingEventResponse {
 		EventType: eventTypeToJSON(event.GetEventType()),
 		Payload:   payload,
 		CreatedAt: timestampToJSON(event.GetCreatedAt()),
+	}
+}
+
+func mapPayment(payment *paymentpb.Payment) paymentResponse {
+	if payment == nil {
+		return paymentResponse{}
+	}
+	return paymentResponse{
+		PaymentID: payment.GetPaymentId(),
+		BookingID: payment.GetBookingId(),
+		UserID:    payment.GetUserId(),
+		Amount:    payment.GetAmount(),
+		Currency:  payment.GetCurrency(),
+		Status:    payment.GetStatus(),
+		CreatedAt: payment.GetCreatedAt(),
+	}
+}
+
+func mapRefund(refund *paymentpb.Refund) refundResponse {
+	if refund == nil {
+		return refundResponse{}
+	}
+	return refundResponse{
+		RefundID:  refund.GetRefundId(),
+		PaymentID: refund.GetPaymentId(),
+		Amount:    refund.GetAmount(),
+		Reason:    refund.GetReason(),
+		Status:    refund.GetStatus(),
+		CreatedAt: refund.GetCreatedAt(),
 	}
 }
 

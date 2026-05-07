@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/MedConnect/booking-service v0.0.0
+	github.com/sllanoscaro/payment-service v0.0.0
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -17,3 +18,5 @@ require (
 )
 
 replace github.com/MedConnect/booking-service => ../booking-service
+
+replace github.com/sllanoscaro/payment-service => ../payment-service

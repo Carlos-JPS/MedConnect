@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/MedConnect/booking-service/pb"
+	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -74,6 +75,89 @@ func (c *fakeBookingClient) ConfirmBooking(_ context.Context, req *pb.ConfirmBoo
 		BookingId: req.GetBookingId(),
 		Status:    pb.BookingStatus_BOOKING_STATUS_CONFIRMED,
 		UpdatedAt: timestamppb.New(time.Date(2026, time.May, 4, 10, 30, 0, 0, time.UTC)),
+	}, nil
+}
+
+type fakePaymentClient struct {
+	createReq       *paymentpb.CreatePaymentRequest
+	processReq      *paymentpb.ProcessPaymentRequest
+	getReq          *paymentpb.GetPaymentRequest
+	listByUserReq   *paymentpb.GetPaymentsByUserRequest
+	getByBookingReq *paymentpb.GetPaymentByBookingRequest
+	refundReq       *paymentpb.RefundPaymentRequest
+}
+
+func (c *fakePaymentClient) CreatePayment(_ context.Context, req *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error) {
+	c.createReq = req
+	return &paymentpb.CreatePaymentResponse{
+		Payment: &paymentpb.Payment{
+			PaymentId: "payment-1",
+			BookingId: req.GetBookingId(),
+			UserId:    req.GetUserId(),
+			Amount:    req.GetAmount(),
+			Currency:  req.GetCurrency(),
+			Status:    "PENDING",
+		},
+	}, nil
+}
+
+func (c *fakePaymentClient) ProcessPayment(_ context.Context, req *paymentpb.ProcessPaymentRequest) (*paymentpb.ProcessPaymentResponse, error) {
+	c.processReq = req
+	return &paymentpb.ProcessPaymentResponse{
+		PaymentId:     req.GetPaymentId(),
+		TransactionId: "txn-1",
+		Status:        "COMPLETED",
+	}, nil
+}
+
+func (c *fakePaymentClient) GetPayment(_ context.Context, req *paymentpb.GetPaymentRequest) (*paymentpb.GetPaymentResponse, error) {
+	c.getReq = req
+	return &paymentpb.GetPaymentResponse{
+		Payment: &paymentpb.Payment{
+			PaymentId: req.GetPaymentId(),
+			BookingId: "booking-1",
+			UserId:    "patient-1",
+			Amount:    15000,
+			Currency:  "CLP",
+			Status:    "COMPLETED",
+		},
+	}, nil
+}
+
+func (c *fakePaymentClient) GetPaymentsByUser(_ context.Context, req *paymentpb.GetPaymentsByUserRequest) (*paymentpb.GetPaymentsByUserResponse, error) {
+	c.listByUserReq = req
+	return &paymentpb.GetPaymentsByUserResponse{
+		Payments: []*paymentpb.Payment{
+			{
+				PaymentId: "payment-1",
+				UserId:    req.GetUserId(),
+				Status:    "PENDING",
+			},
+		},
+	}, nil
+}
+
+func (c *fakePaymentClient) GetPaymentByBooking(_ context.Context, req *paymentpb.GetPaymentByBookingRequest) (*paymentpb.GetPaymentByBookingResponse, error) {
+	c.getByBookingReq = req
+	return &paymentpb.GetPaymentByBookingResponse{
+		Payment: &paymentpb.Payment{
+			PaymentId: "payment-1",
+			BookingId: req.GetBookingId(),
+			Status:    "PENDING",
+		},
+	}, nil
+}
+
+func (c *fakePaymentClient) RefundPayment(_ context.Context, req *paymentpb.RefundPaymentRequest) (*paymentpb.RefundPaymentResponse, error) {
+	c.refundReq = req
+	return &paymentpb.RefundPaymentResponse{
+		Refund: &paymentpb.Refund{
+			RefundId:  "refund-1",
+			PaymentId: req.GetPaymentId(),
+			Amount:    req.GetAmount(),
+			Reason:    req.GetReason(),
+			Status:    "REFUNDED",
+		},
 	}, nil
 }
 
@@ -171,5 +255,120 @@ func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	}
 	if client.confirmReq.GetPaymentId() != "payment-1" {
 		t.Fatalf("expected payment id to be forwarded")
+	}
+}
+
+func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
+	bookingClient := &fakeBookingClient{}
+	paymentClient := &fakePaymentClient{}
+	handler := NewHandler(bookingClient, paymentClient)
+	req := httptest.NewRequest(http.MethodPost, "/payments", strings.NewReader(`{
+		"booking_id":"booking-1",
+		"user_id":"patient-1",
+		"amount":15000,
+		"currency":"CLP"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if paymentClient.createReq.GetBookingId() != "booking-1" {
+		t.Fatalf("expected booking id to be sent to payment-service")
+	}
+	if !strings.Contains(rec.Body.String(), `"payment_id":"payment-1"`) {
+		t.Fatalf("expected payment id response, got %s", rec.Body.String())
+	}
+}
+
+func TestPaymentActionEndpointsUsePathIDs(t *testing.T) {
+	bookingClient := &fakeBookingClient{}
+	paymentClient := &fakePaymentClient{}
+	handler := NewHandler(bookingClient, paymentClient)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		want   int
+		check  func(t *testing.T)
+	}{
+		{
+			name:   "process",
+			method: http.MethodPost,
+			path:   "/payments/payment-1/process",
+			body:   `{"payment_method_id":"method-1"}`,
+			want:   http.StatusOK,
+			check: func(t *testing.T) {
+				if paymentClient.processReq.GetPaymentId() != "payment-1" {
+					t.Fatalf("expected process payment id payment-1")
+				}
+			},
+		},
+		{
+			name:   "get",
+			method: http.MethodGet,
+			path:   "/payments/payment-1",
+			want:   http.StatusOK,
+			check: func(t *testing.T) {
+				if paymentClient.getReq.GetPaymentId() != "payment-1" {
+					t.Fatalf("expected get payment id payment-1")
+				}
+			},
+		},
+		{
+			name:   "list by user",
+			method: http.MethodGet,
+			path:   "/payments/user/patient-1",
+			want:   http.StatusOK,
+			check: func(t *testing.T) {
+				if paymentClient.listByUserReq.GetUserId() != "patient-1" {
+					t.Fatalf("expected user id patient-1")
+				}
+			},
+		},
+		{
+			name:   "get by booking",
+			method: http.MethodGet,
+			path:   "/payments/booking/booking-1",
+			want:   http.StatusOK,
+			check: func(t *testing.T) {
+				if paymentClient.getByBookingReq.GetBookingId() != "booking-1" {
+					t.Fatalf("expected booking id booking-1")
+				}
+			},
+		},
+		{
+			name:   "refund",
+			method: http.MethodPost,
+			path:   "/payments/payment-1/refund",
+			body:   `{"amount":1000,"reason":"patient request"}`,
+			want:   http.StatusOK,
+			check: func(t *testing.T) {
+				if paymentClient.refundReq.GetPaymentId() != "payment-1" {
+					t.Fatalf("expected refund payment id payment-1")
+				}
+				if paymentClient.refundReq.GetReason() != "patient request" {
+					t.Fatalf("expected refund reason to be forwarded")
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tc.want {
+				t.Fatalf("expected status %d, got %d: %s", tc.want, rec.Code, rec.Body.String())
+			}
+			tc.check(t)
+		})
 	}
 }

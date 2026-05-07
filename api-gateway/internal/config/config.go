@@ -9,6 +9,7 @@ const (
 	defaultHTTPHost             = "0.0.0.0"
 	defaultHTTPPort             = "8080"
 	defaultBookingServiceTarget = "booking-service:50051"
+	defaultPaymentServiceTarget = "payment-service:50051"
 	defaultRequestTimeout       = 5 * time.Second
 )
 
@@ -16,6 +17,7 @@ type Config struct {
 	HTTPHost             string
 	HTTPPort             string
 	BookingServiceTarget string
+	PaymentServiceTarget string
 	RequestTimeout       time.Duration
 }
 
@@ -24,6 +26,7 @@ func Load() Config {
 		HTTPHost:             envOrDefault("API_GATEWAY_HOST", defaultHTTPHost),
 		HTTPPort:             envOrDefault("API_GATEWAY_PORT", defaultHTTPPort),
 		BookingServiceTarget: envOrDefault("BOOKING_SERVICE_TARGET", defaultBookingServiceTarget),
+		PaymentServiceTarget: envOrDefault("PAYMENT_SERVICE_TARGET", defaultPaymentServiceTarget),
 		RequestTimeout:       durationOrDefault("API_GATEWAY_REQUEST_TIMEOUT", defaultRequestTimeout),
 	}
 }
