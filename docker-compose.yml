@@ -1,41 +1,52 @@
 services:
- 
+  gateway-service:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: gateway-service
+    env_file: ./gateway-service/.env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - payment-service
+    networks:
+      - medconnect-net
+
   payment-service:
     build:
       context: ./payment-service
       dockerfile: Dockerfile
     container_name: payment-service
-    env_file: .env
-    ports:
-      - "${GRPC_PORT}:${GRPC_PORT}"
+    env_file: ./payment-service/.env
     depends_on:
       payments-db:
         condition: service_healthy
     networks:
-      - payments-net
- 
+      - medconnect-net
+
   payments-db:
     image: postgres:15
     container_name: payments-db
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${PAYMENTS_DB_USER}
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+      POSTGRES_DB: ${PAYMENTS_DB_NAME}
     volumes:
       - payments-db-data:/var/lib/postgresql/data
-      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PAYMENTS_DB_USER} -d ${PAYMENTS_DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - payments-net
+      - medconnect-net
+
  
 volumes:
   payments-db-data:
  
 networks:
-  payments-net:
+  medconnect-net:
     driver: bridge
  
