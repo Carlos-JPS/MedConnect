@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/MedConnect/booking-service/internal/clients/payment/pb"
 	"github.com/MedConnect/booking-service/internal/service"
+	pb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

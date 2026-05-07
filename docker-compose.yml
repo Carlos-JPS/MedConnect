@@ -35,7 +35,8 @@ services:
 
   booking-service:
     build:
-      context: ./booking-service
+      context: .
+      dockerfile: booking-service/Dockerfile
     environment:
       BOOKING_SERVICE_HOST: ${BOOKING_SERVICE_HOST:-0.0.0.0}
       BOOKING_SERVICE_PORT: ${BOOKING_SERVICE_PORT:-50051}

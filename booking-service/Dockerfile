@@ -1,11 +1,13 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 
-WORKDIR /app
+WORKDIR /workspace
 
-COPY go.mod go.sum ./
+COPY payment-service ./payment-service
+COPY booking-service ./booking-service
+
+WORKDIR /workspace/booking-service
 RUN go mod download
 
-COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/booking-service ./cmd/booking-service
 
 FROM alpine:3.20
