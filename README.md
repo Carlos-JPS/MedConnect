@@ -48,8 +48,10 @@ PAYMENT_SERVICE_TARGET=payment-service:50051
 BOOKING_SERVICE_TARGET=booking-service:50051
 API_GATEWAY_PORT=8080
 FRONTEND_PORT=5173
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=/api
 ```
+
+El frontend usa `/api` para llamar al gateway por el mismo origen del navegador. En Docker, Nginx reenvia `/api/*` hacia `api-gateway:8080`; en desarrollo local, Vite hace el mismo proxy hacia `http://localhost:8080`.
 
 ## Levantar el Sistema
 
@@ -91,9 +93,9 @@ Todas las rutas entran por `api-gateway`.
 curl -X POST http://localhost:8080/bookings \
   -H "Content-Type: application/json" \
   -d '{
-    "patient_id": "patient-demo",
-    "doctor_id": "doctor-demo",
-    "slot_id": "slot-cardio-0900",
+    "patient_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+    "doctor_id": "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
+    "slot_id": "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
     "notes": "Control creado desde demo"
   }'
 ```
@@ -113,13 +115,13 @@ Si `availability-service` no esta implementado o no esta levantado, el gateway d
 ### Listar Reservas de Paciente
 
 ```bash
-curl "http://localhost:8080/bookings?patient_id=patient-demo"
+curl "http://localhost:8080/bookings?patient_id=46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235"
 ```
 
 Filtro por estado:
 
 ```bash
-curl "http://localhost:8080/bookings?patient_id=patient-demo&status=PENDING_PAYMENT"
+curl "http://localhost:8080/bookings?patient_id=46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235&status=PENDING_PAYMENT"
 ```
 
 ### Obtener Detalle de Reserva
@@ -165,7 +167,7 @@ curl -X POST http://localhost:8080/payments \
   -H "Content-Type: application/json" \
   -d '{
     "booking_id": "{booking_id}",
-    "user_id": "patient-demo",
+    "user_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
     "amount": 15000,
     "currency": "CLP"
   }'
