@@ -1,63 +1,61 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"log"
 	"net"
+	"time"
 
+	"github.com/Carlos-JPS/medconnect/availability-service/modules/config"
+	"github.com/Carlos-JPS/medconnect/availability-service/modules/handler"
+	"github.com/Carlos-JPS/medconnect/availability-service/modules/repository"
+	"github.com/Carlos-JPS/medconnect/availability-service/modules/service"
 	pb "github.com/Carlos-JPS/medconnect/availability-service/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-// server implementa la interfaz AvailabilityServiceServer generada por protoc
-type server struct {
-	pb.UnimplementedAvailabilityServiceServer
-}
-
-// GetAvailableSlots: implementación mínima con datos hardcodeados
-func (s *server) GetAvailableSlots(ctx context.Context, req *pb.GetAvailableSlotsRequest) (*pb.GetAvailableSlotsResponse, error) {
-	log.Printf("Recibida petición de slots para especialidad: %s desde %s hasta %s", req.Specialty, req.FromDate, req.ToDate)
-
-	// Datos hardcodeados para probar que el servidor responde
-	return &pb.GetAvailableSlotsResponse{
-		Slots: []*pb.Slot{
-			{
-				SlotId:    "123e4567-e89b-12d3-a456-426614174000",
-				DoctorId:  "doc-001",
-				Specialty: req.Specialty,
-				StartTime: "2024-05-10T09:00:00Z",
-				EndTime:   "2024-05-10T09:30:00Z",
-				Status:    "available",
-			},
-			{
-				SlotId:    "123e4567-e89b-12d3-a456-426614174001",
-				DoctorId:  "doc-001",
-				Specialty: req.Specialty,
-				StartTime: "2024-05-10T10:00:00Z",
-				EndTime:   "2024-05-10T10:30:00Z",
-				Status:    "available",
-			},
-		},
-	}, nil
-}
-
 func main() {
-	// Escuchar en el puerto 50051
-	lis, err := net.Listen("tcp", ":50051")
+	cfg := config.Load()
+
+	repo, err := connectWithRetry(cfg.DSN(), 5, 3*time.Second)
 	if err != nil {
-		log.Fatalf("Error al escuchar en el puerto 50051: %v", err)
+		log.Fatalf("no se pudo conectar a la base de datos: %v", err)
+	}
+	log.Println("conexión a PostgreSQL establecida")
+
+	svc := service.NewAvailabilityService(repo)
+	h := handler.NewGRPCHandler(svc)
+
+	addr := fmt.Sprintf(":%s", cfg.GRPCPort)
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("error abriendo puerto %s: %v", addr, err)
 	}
 
-	// Crear el servidor gRPC
-	srv := grpc.NewServer()
+	grpcServer := grpc.NewServer()
+	pb.RegisterAvailabilityServiceServer(grpcServer, h)
+	reflection.Register(grpcServer)
 
-	// Registrar nuestro servicio
-	pb.RegisterAvailabilityServiceServer(srv, &server{})
-
-	log.Println("Servidor gRPC de Availability escuchando en :50051")
-
-	// Empezar a servir
-	if err := srv.Serve(lis); err != nil {
-		log.Fatalf("Error al servir gRPC: %v", err)
+	log.Printf("availability-service escuchando en %s (gRPC)", addr)
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("error en servidor gRPC: %v", err)
 	}
+}
+
+func connectWithRetry(dsn string, maxAttempts int, delay time.Duration) (repository.AvailabilityRepository, error) {
+	var repo repository.AvailabilityRepository
+	var err error
+
+	for i := 1; i <= maxAttempts; i++ {
+		repo, err = repository.NewPostgresRepository(dsn)
+		if err == nil {
+			return repo, nil
+		}
+		log.Printf("intento %d/%d fallido al conectar a postgres: %v", i, maxAttempts, err)
+		if i < maxAttempts {
+			time.Sleep(delay)
+		}
+	}
+	return nil, fmt.Errorf("todos los intentos de conexión fallaron: %w", err)
 }

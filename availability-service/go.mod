@@ -3,6 +3,7 @@ module github.com/Carlos-JPS/medconnect/availability-service
 go 1.26.1
 
 require (
+	github.com/lib/pq v1.12.3
 	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 )
