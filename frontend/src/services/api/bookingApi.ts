@@ -55,18 +55,16 @@ export type BookingDetail = {
 
 export type BookingApi = ReturnType<typeof createBookingApi>;
 
-const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function createBookingApi(baseUrl = defaultBaseUrl) {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
 
   async function request<T>(path: string, init: RequestInit): Promise<T> {
+    const headers = requestHeaders(init);
     const response = await fetch(`${normalizedBaseUrl}${path}`, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-      },
+      ...(headers ? { headers } : {}),
     });
 
     if (!response.ok) {
@@ -121,6 +119,36 @@ export function createBookingApi(baseUrl = defaultBaseUrl) {
       );
     },
   };
+}
+
+function normalizeBaseUrl(baseUrl: string) {
+  const trimmedBaseUrl = baseUrl.trim();
+  if (trimmedBaseUrl === "/") {
+    return "";
+  }
+
+  return trimmedBaseUrl.replace(/\/+$/, "");
+}
+
+function requestHeaders(init: RequestInit) {
+  const headers = objectHeaders(init.headers);
+  const hasContentType = Object.keys(headers).some(
+    (headerName) => headerName.toLowerCase() === "content-type",
+  );
+
+  if (init.body && !hasContentType) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+function objectHeaders(headers: RequestInit["headers"]) {
+  if (!headers) {
+    return {};
+  }
+
+  return Object.fromEntries(new Headers(headers).entries());
 }
 
 async function errorMessage(response: Response) {

@@ -42,6 +42,7 @@ describe("bookingApi", () => {
       "http://gateway.test/bookings",
       expect.objectContaining({
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patient_id: "patient-1",
           doctor_id: "doctor-1",
@@ -49,6 +50,19 @@ describe("bookingApi", () => {
           notes: "Control inicial",
         }),
       }),
+    );
+  });
+
+  it("uses the same-origin gateway proxy and avoids JSON headers on reads", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(await jsonResponse({ bookings: [] }));
+
+    const api = createBookingApi();
+    await api.listBookings("patient-1", "CONFIRMED");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/bookings?patient_id=patient-1&status=CONFIRMED",
+      { method: "GET" },
     );
   });
 
@@ -98,18 +112,19 @@ describe("bookingApi", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "http://gateway.test/bookings?patient_id=patient-1&status=PENDING_PAYMENT",
-      expect.objectContaining({ method: "GET" }),
+      { method: "GET" },
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "http://gateway.test/bookings/booking-1",
-      expect.objectContaining({ method: "GET" }),
+      { method: "GET" },
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       "http://gateway.test/bookings/booking-1/confirm",
       expect.objectContaining({
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ payment_id: "payment-1" }),
       }),
     );
@@ -118,6 +133,7 @@ describe("bookingApi", () => {
       "http://gateway.test/bookings/booking-1/cancel",
       expect.objectContaining({
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: "Cambio de agenda" }),
       }),
     );

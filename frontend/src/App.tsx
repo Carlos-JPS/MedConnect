@@ -35,11 +35,14 @@ type DemoSlot = {
   triage: string;
 };
 
+const demoPatientId = "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235";
+const demoPaymentId = "b7d8f1b0-af07-4e57-8859-e929aa77e2fc";
+
 const demoSlots: DemoSlot[] = [
   {
-    id: "slot-cardio-0900",
+    id: "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
     specialty: "Cardiología",
-    doctorId: "doctor-cardiologia",
+    doctorId: "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
     doctorName: "Dra. Valentina Rojas",
     startsAt: "2026-05-04T09:00:00-04:00",
     duration: "30 min",
@@ -47,9 +50,9 @@ const demoSlots: DemoSlot[] = [
     triage: "prioridad normal",
   },
   {
-    id: "slot-trauma-1030",
+    id: "8d3d26e8-4d55-4d0d-99e8-0ed2133b8c31",
     specialty: "Traumatología",
-    doctorId: "doctor-traumatologia",
+    doctorId: "d2f50707-24ab-4df8-8a6b-cc12a8c47a91",
     doctorName: "Dr. Matías Fuentes",
     startsAt: "2026-05-04T10:30:00-04:00",
     duration: "45 min",
@@ -57,9 +60,9 @@ const demoSlots: DemoSlot[] = [
     triage: "control postoperatorio",
   },
   {
-    id: "slot-medicina-1545",
+    id: "5cb4ad32-545f-4810-bd7f-0a979e4f25e5",
     specialty: "Medicina interna",
-    doctorId: "doctor-medicina-interna",
+    doctorId: "4f1cb247-7810-4ae4-9267-a8df9c7a0835",
     doctorName: "Dra. Camila Soto",
     startsAt: "2026-05-04T15:45:00-04:00",
     duration: "30 min",
@@ -79,7 +82,7 @@ const statusOptions: Array<{ value: BookingStatus | ""; label: string }> = [
 const api = createBookingApi();
 
 function App() {
-  const [patientId, setPatientId] = useState("patient-demo");
+  const [patientId, setPatientId] = useState(demoPatientId);
   const [statusFilter, setStatusFilter] = useState<BookingStatus | "">("");
   const [doctorId, setDoctorId] = useState(demoSlots[0].doctorId);
   const [slotId, setSlotId] = useState("");
@@ -87,7 +90,7 @@ function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [detail, setDetail] = useState<BookingDetail | null>(null);
   const [lookupBookingId, setLookupBookingId] = useState("");
-  const [paymentId, setPaymentId] = useState("payment-demo-approved");
+  const [paymentId, setPaymentId] = useState(demoPaymentId);
   const [cancelReason, setCancelReason] = useState("Paciente solicita reagendar.");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");

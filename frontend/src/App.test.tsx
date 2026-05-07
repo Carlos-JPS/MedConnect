@@ -6,9 +6,9 @@ import App from "./App";
 
 const booking = {
   booking_id: "booking-1",
-  patient_id: "patient-demo",
-  doctor_id: "doctor-cardiologia",
-  slot_id: "slot-cardio-0900",
+  patient_id: "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+  doctor_id: "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
+  slot_id: "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
   status: "PENDING_PAYMENT",
   reserved_until: "2026-05-04T13:15:00Z",
 };
@@ -82,7 +82,9 @@ describe("App", () => {
     await act(async () => {
       await user.click(screen.getByRole("button", { name: /seleccionar bloque cardiología/i }));
     });
-    expect(screen.getByLabelText(/slot seleccionado/i)).toHaveValue("slot-cardio-0900");
+    expect(screen.getByLabelText(/slot seleccionado/i)).toHaveValue(
+      "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
+    );
 
     await act(async () => {
       await user.click(screen.getByRole("button", { name: /crear reserva/i }));
@@ -111,7 +113,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
-        "http://localhost:8080/bookings",
+        "/api/bookings",
         expect.objectContaining({ method: "POST" }),
       );
     });
