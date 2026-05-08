@@ -109,6 +109,8 @@ services:
       dockerfile: Dockerfile
     container_name: availability-service
     env_file: ./availability-service/.env
+    expose:
+      - "50051"
     depends_on:
       availability-db:
         condition: service_healthy
