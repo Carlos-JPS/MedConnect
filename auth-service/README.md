@@ -50,7 +50,8 @@ auth-service/
 │   └── main.go
 ├── internal/
 │   ├── config/                # Carga de variables de entorno — pendiente
-│   ├── service/               # Lógica de negocio (bcrypt, JWT) — pendiente
+│   ├── service/               # Lógica de negocio (bcrypt, JWT) ✅
+│   │   └── auth_service.go    # Implementación de hashing, verificación de clave y emisión de JWT
 │   ├── repository/postgres/   # Queries SQL contra PostgreSQL ✅
 │   │   ├── models.go          # Struct User y constantes de roles
 │   │   └── repository.go     # CreateUser, GetUserByEmail, GetUserById
@@ -87,12 +88,22 @@ La capa de persistencia (`internal/repository/postgres/`) implementa el acceso d
 
 > **Resiliencia:** Cada query usa `context.WithTimeout` de 5 segundos para evitar bloqueos con la base de datos. Los errores de constraint (`UNIQUE` en email) se traducen a errores de dominio legibles.
 
+## Capa Service
+
+La capa de negocio (`internal/service/`) implementa la lógica fundamental y desacopla la persistencia usando la interfaz `UserRepository`:
+
+- **`auth_service.go`**: Expone la interfaz `AuthService` e implementa:
+  - `RegisterUser` — Hashea la contraseña usando `bcrypt` (DefaultCost) e invoca la creación del usuario en el repositorio.
+  - `Login` — Recupera el hash por email, lo compara con `bcrypt.CompareHashAndPassword` y, si es correcto, emite un token JWT firmado con `HS256` y válido por 24 horas.
+  - `ValidateToken` — Verifica la firma y expiración del JWT (`jwt-go v5`), parsea los claims y valida que el usuario siga existiendo.
+  - `GetUserById` — Capa passthrough para recuperar el perfil del usuario validado.
+
 ## Estado de Implementación
 
 - [x] Contrato Protobuf (`auth.proto`) y código generado.
 - [x] Migración SQL para la tabla `users`.
 - [x] Capa repository (persistencia PostgreSQL).
-- [ ] Capa service (lógica de negocio, bcrypt, JWT).
+- [x] Capa service (lógica de negocio, bcrypt, JWT).
 - [ ] Capa transport (servidor gRPC).
 - [ ] Punto de entrada (`cmd/auth-service/main.go`).
 - [ ] Dockerfile.
