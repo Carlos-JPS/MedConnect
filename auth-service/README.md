@@ -46,7 +46,7 @@ CREATE TABLE users (
 
 ```
 auth-service/
-├── cmd/auth-service/          # Punto de entrada (main.go) — pendiente
+├── cmd/auth-service/          # Punto de entrada (main.go) ✅
 │   └── main.go
 ├── internal/
 │   ├── config/                # Carga de variables de entorno — pendiente
@@ -55,7 +55,8 @@ auth-service/
 │   ├── repository/postgres/   # Queries SQL contra PostgreSQL ✅
 │   │   ├── models.go          # Struct User y constantes de roles
 │   │   └── repository.go     # CreateUser, GetUserByEmail, GetUserById
-│   └── transport/grpc/        # Servidor gRPC (handler) — pendiente
+│   └── transport/grpc/        # Servidor gRPC (handler) ✅
+│       └── handler.go         # Mapeo de pb a capa service y traducción de códigos de error gRPC
 ├── migrations/
 │   ├── 000001_create_users_table.up.sql
 │   └── 000001_create_users_table.down.sql
@@ -104,7 +105,7 @@ La capa de negocio (`internal/service/`) implementa la lógica fundamental y des
 - [x] Migración SQL para la tabla `users`.
 - [x] Capa repository (persistencia PostgreSQL).
 - [x] Capa service (lógica de negocio, bcrypt, JWT).
-- [ ] Capa transport (servidor gRPC).
-- [ ] Punto de entrada (`cmd/auth-service/main.go`).
+- [x] Capa transport (servidor gRPC).
+- [x] Punto de entrada (`cmd/auth-service/main.go`).
 - [ ] Dockerfile.
 - [ ] Integración con Docker Compose y API Gateway.
