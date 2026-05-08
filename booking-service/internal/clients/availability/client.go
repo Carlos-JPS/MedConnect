@@ -3,12 +3,12 @@ package availability
 import (
 	"context"
 	"errors"
+	"time"
 
-	"github.com/MedConnect/booking-service/internal/clients/availability/pb"
 	"github.com/MedConnect/booking-service/internal/service"
+	pb "github.com/Carlos-JPS/medconnect/availability-service/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type GRPCClient struct {
@@ -40,7 +40,7 @@ func (c *GRPCClient) HoldSlot(ctx context.Context, input service.HoldSlotInput) 
 	_, err := c.client.HoldSlot(ctx, &pb.HoldSlotRequest{
 		SlotId:    input.SlotID,
 		BookingId: input.BookingID,
-		HeldUntil: timestamppb.New(input.HeldUntil),
+		HeldUntil: input.HeldUntil.Format(time.RFC3339),
 	})
 	return err
 }

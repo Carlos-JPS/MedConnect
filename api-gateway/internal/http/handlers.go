@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	availabilitypb "github.com/Carlos-JPS/medconnect/availability-service/pb"
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc/codes"
@@ -33,17 +34,22 @@ type PaymentClient interface {
 	RefundPayment(ctx context.Context, req *paymentpb.RefundPaymentRequest) (*paymentpb.RefundPaymentResponse, error)
 }
 
-type Handler struct {
-	booking BookingClient
-	payment PaymentClient
+type AvailabilityClient interface {
+	GetAvailableSlots(ctx context.Context, req *availabilitypb.GetAvailableSlotsRequest) (*availabilitypb.GetAvailableSlotsResponse, error)
+	GetDoctorAgenda(ctx context.Context, req *availabilitypb.GetDoctorAgendaRequest) (*availabilitypb.GetDoctorAgendaResponse, error)
+	HoldSlot(ctx context.Context, req *availabilitypb.HoldSlotRequest) (*availabilitypb.HoldSlotResponse, error)
+	ConfirmSlotBooking(ctx context.Context, req *availabilitypb.ConfirmSlotBookingRequest) (*availabilitypb.ConfirmSlotBookingResponse, error)
+	ReleaseHeldSlot(ctx context.Context, req *availabilitypb.ReleaseHeldSlotRequest) (*availabilitypb.ReleaseHeldSlotResponse, error)
 }
 
-func NewHandler(booking BookingClient, payment ...PaymentClient) *Handler {
-	handler := &Handler{booking: booking}
-	if len(payment) > 0 {
-		handler.payment = payment[0]
-	}
-	return handler
+type Handler struct {
+	booking      BookingClient
+	payment      PaymentClient
+	availability AvailabilityClient
+}
+
+func NewHandler(booking BookingClient, payment PaymentClient, availability AvailabilityClient) *Handler {
+	return &Handler{booking: booking, payment: payment, availability: availability}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +76,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.getPaymentByBooking(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/payments/"):
 		h.getPayment(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/availability/slots":
+		h.getAvailableSlots(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/availability/doctors/"):
+		h.getDoctorAgenda(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/availability/hold":
+		h.holdSlot(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/availability/confirm":
+		h.confirmSlotBooking(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/availability/release":
+		h.releaseHeldSlot(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "ruta no encontrada")
 	}
@@ -413,6 +429,183 @@ func (h *Handler) requirePaymentClient(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+// ── Availability handlers ──────────────────────────────────────────────
+
+func (h *Handler) getAvailableSlots(w http.ResponseWriter, r *http.Request) {
+	specialty := r.URL.Query().Get("specialty")
+	fromDate := r.URL.Query().Get("from_date")
+	toDate := r.URL.Query().Get("to_date")
+	doctorID := r.URL.Query().Get("doctor_id")
+
+	if specialty == "" || fromDate == "" || toDate == "" {
+		writeError(w, http.StatusBadRequest, "specialty, from_date y to_date son obligatorios")
+		return
+	}
+
+	resp, err := h.availability.GetAvailableSlots(r.Context(), &availabilitypb.GetAvailableSlotsRequest{
+		Specialty: specialty,
+		FromDate:  fromDate,
+		ToDate:    toDate,
+		DoctorId:  doctorID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slots := make([]map[string]any, 0, len(resp.GetSlots()))
+	for _, s := range resp.GetSlots() {
+		slots = append(slots, mapSlot(s))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"slots": slots})
+}
+
+func (h *Handler) getDoctorAgenda(w http.ResponseWriter, r *http.Request) {
+	doctorID := valueAfterPrefix(r.URL.Path, "/availability/doctors/")
+	if doctorID == "" {
+		writeError(w, http.StatusBadRequest, "doctor_id es obligatorio")
+		return
+	}
+
+	fromDate := r.URL.Query().Get("from_date")
+	toDate := r.URL.Query().Get("to_date")
+	if fromDate == "" || toDate == "" {
+		writeError(w, http.StatusBadRequest, "from_date y to_date son obligatorios")
+		return
+	}
+
+	resp, err := h.availability.GetDoctorAgenda(r.Context(), &availabilitypb.GetDoctorAgendaRequest{
+		DoctorId: doctorID,
+		FromDate: fromDate,
+		ToDate:   toDate,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slots := make([]map[string]any, 0, len(resp.GetSlots()))
+	for _, s := range resp.GetSlots() {
+		slots = append(slots, mapSlot(s))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"doctor_id": resp.GetDoctorId(),
+		"slots":     slots,
+	})
+}
+
+type holdSlotRequest struct {
+	SlotID    string `json:"slot_id"`
+	BookingID string `json:"booking_id"`
+	HeldUntil string `json:"held_until"`
+}
+
+func (h *Handler) holdSlot(w http.ResponseWriter, r *http.Request) {
+	var req holdSlotRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.SlotID == "" || req.BookingID == "" {
+		writeError(w, http.StatusBadRequest, "slot_id y booking_id son obligatorios")
+		return
+	}
+
+	resp, err := h.availability.HoldSlot(r.Context(), &availabilitypb.HoldSlotRequest{
+		SlotId:    req.SlotID,
+		BookingId: req.BookingID,
+		HeldUntil: req.HeldUntil,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"slot_id":    resp.GetSlotId(),
+		"status":     resp.GetStatus(),
+		"held_until": resp.GetHeldUntil(),
+		"booking_id": resp.GetBookingId(),
+	})
+}
+
+type confirmSlotRequest struct {
+	SlotID    string `json:"slot_id"`
+	BookingID string `json:"booking_id"`
+}
+
+func (h *Handler) confirmSlotBooking(w http.ResponseWriter, r *http.Request) {
+	var req confirmSlotRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.SlotID == "" || req.BookingID == "" {
+		writeError(w, http.StatusBadRequest, "slot_id y booking_id son obligatorios")
+		return
+	}
+
+	resp, err := h.availability.ConfirmSlotBooking(r.Context(), &availabilitypb.ConfirmSlotBookingRequest{
+		SlotId:    req.SlotID,
+		BookingId: req.BookingID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"slot_id":    resp.GetSlotId(),
+		"status":     resp.GetStatus(),
+		"booking_id": resp.GetBookingId(),
+	})
+}
+
+type releaseSlotRequest struct {
+	SlotID    string `json:"slot_id"`
+	BookingID string `json:"booking_id"`
+}
+
+func (h *Handler) releaseHeldSlot(w http.ResponseWriter, r *http.Request) {
+	var req releaseSlotRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.SlotID == "" || req.BookingID == "" {
+		writeError(w, http.StatusBadRequest, "slot_id y booking_id son obligatorios")
+		return
+	}
+
+	resp, err := h.availability.ReleaseHeldSlot(r.Context(), &availabilitypb.ReleaseHeldSlotRequest{
+		SlotId:    req.SlotID,
+		BookingId: req.BookingID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"slot_id": resp.GetSlotId(),
+		"status":  resp.GetStatus(),
+	})
+}
+
+func mapSlot(s *availabilitypb.Slot) map[string]any {
+	if s == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"slot_id":    s.GetSlotId(),
+		"doctor_id":  s.GetDoctorId(),
+		"specialty":  s.GetSpecialty(),
+		"start_time": s.GetStartTime(),
+		"end_time":   s.GetEndTime(),
+		"status":     s.GetStatus(),
+	}
 }
 
 func bookingIDFromPath(path string, suffix string) string {

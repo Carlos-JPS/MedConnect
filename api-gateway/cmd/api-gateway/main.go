@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MedConnect/api-gateway/internal/config"
+	availabilityclient "github.com/MedConnect/api-gateway/internal/grpc/availability"
 	bookingclient "github.com/MedConnect/api-gateway/internal/grpc/booking"
 	paymentclient "github.com/MedConnect/api-gateway/internal/grpc/payment"
 	httpapi "github.com/MedConnect/api-gateway/internal/http"
@@ -28,7 +29,13 @@ func main() {
 	}
 	defer paymentClient.Close()
 
-	handler := withTimeout(httpapi.NewHandler(bookingClient, paymentClient), cfg.RequestTimeout)
+	availabilityClient, err := availabilityclient.NewClient(cfg.AvailabilityServiceTarget)
+	if err != nil {
+		log.Fatalf("error al inicializar cliente availability-service: %v", err)
+	}
+	defer availabilityClient.Close()
+
+	handler := withTimeout(httpapi.NewHandler(bookingClient, paymentClient, availabilityClient), cfg.RequestTimeout)
 	server := &http.Server{
 		Addr:    net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort),
 		Handler: handler,

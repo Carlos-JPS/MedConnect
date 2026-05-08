@@ -342,6 +342,152 @@ collection:
             send: true
             store: true
           rebuildPath: true
+  - name: Availability
+    meta:
+      id: fld_availability_medconnect
+      created: 1778129100000
+      modified: 1778129100000
+      sortKey: -1778129100000
+      description: "Endpoints de disponibilidad por api-gateway"
+    children:
+      - url: "{{ _.base_url }}/availability/slots?specialty=Cardiolog%C3%ADa&from_date=2026-05-01T00:00:00-04:00&to_date=2026-05-31T23:59:59-04:00"
+        name: Get Available Slots
+        meta:
+          id: req_avail_get_slots
+          created: 1778129101000
+          modified: 1778129101000
+          isPrivate: false
+          description: "Busca slots disponibles por especialidad y rango de fechas."
+          sortKey: -1778129101000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/doctors/{{ _.doctor_id }}?from_date=2026-05-01T00:00:00-04:00&to_date=2026-05-31T23:59:59-04:00"
+        name: Get Doctor Agenda
+        meta:
+          id: req_avail_doctor_agenda
+          created: 1778129102000
+          modified: 1778129102000
+          isPrivate: false
+          description: "Obtiene la agenda completa de un doctor (incluye todos los estados)."
+          sortKey: -1778129102000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/hold"
+        name: Hold Slot
+        meta:
+          id: req_avail_hold
+          created: 1778129103000
+          modified: 1778129103000
+          isPrivate: false
+          description: "Bloquea temporalmente un slot (available -> held)."
+          sortKey: -1778129103000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}",
+              "held_until": "2026-05-10T15:00:00-04:00"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/confirm"
+        name: Confirm Slot Booking
+        meta:
+          id: req_avail_confirm
+          created: 1778129104000
+          modified: 1778129104000
+          isPrivate: false
+          description: "Confirma un slot previamente bloqueado (held -> booked)."
+          sortKey: -1778129104000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/release"
+        name: Release Held Slot
+        meta:
+          id: req_avail_release
+          created: 1778129105000
+          modified: 1778129105000
+          isPrivate: false
+          description: "Libera un slot bloqueado (held -> available)."
+          sortKey: -1778129105000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
 cookieJar:
   name: Default Jar
   meta:
@@ -357,9 +503,9 @@ environments:
     isPrivate: false
   data:
     base_url: http://localhost:8080
-    patient_id: patient-demo
-    doctor_id: doctor-demo
-    slot_id: slot-cardio-0900
-    booking_id: replace-with-booking-id
-    payment_id: replace-with-payment-id
-    payment_method_id: method-demo
+    patient_id: 22222222-2222-2222-2222-222222222222
+    doctor_id: 00000000-0000-0000-0000-000000000001
+    slot_id: 11111111-1111-1111-1111-111111111111
+    booking_id: 33333333-3333-3333-3333-333333333333
+    payment_id: 44444444-4444-4444-4444-444444444444
+    payment_method_id: 55555555-5555-5555-5555-555555555555
