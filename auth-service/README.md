@@ -51,7 +51,9 @@ auth-service/
 ├── internal/
 │   ├── config/                # Carga de variables de entorno — pendiente
 │   ├── service/               # Lógica de negocio (bcrypt, JWT) — pendiente
-│   ├── repository/postgres/   # Queries SQL contra PostgreSQL — pendiente
+│   ├── repository/postgres/   # Queries SQL contra PostgreSQL ✅
+│   │   ├── models.go          # Struct User y constantes de roles
+│   │   └── repository.go     # CreateUser, GetUserByEmail, GetUserById
 │   └── transport/grpc/        # Servidor gRPC (handler) — pendiente
 ├── migrations/
 │   ├── 000001_create_users_table.up.sql
@@ -73,11 +75,23 @@ auth-service/
 | `AUTH_DB_DSN` | DSN de conexión a PostgreSQL | `postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable` |
 | `JWT_SECRET` | Clave secreta para firmar tokens JWT | `mi-clave-secreta-segura` |
 
+## Capa Repository
+
+La capa de persistencia (`internal/repository/postgres/`) implementa el acceso directo a PostgreSQL:
+
+- **`models.go`**: Define el struct `User` (con campos `ID`, `Email`, `PasswordHash`, `FullName`, `Role`, `CreatedAt`, `IsActive`) y las constantes de rol (`ADMIN`, `DOCTOR`, `PATIENT`).
+- **`repository.go`**: Implementa 3 métodos:
+  - `CreateUser(ctx, user)` — Inserta un usuario; detecta emails duplicados devolviendo `ErrEmailAlreadyExists`.
+  - `GetUserByEmail(ctx, email)` — Busca por email; devuelve `ErrUserNotFound` si no existe.
+  - `GetUserById(ctx, id)` — Busca por UUID; devuelve `ErrUserNotFound` si no existe.
+
+> **Resiliencia:** Cada query usa `context.WithTimeout` de 5 segundos para evitar bloqueos con la base de datos. Los errores de constraint (`UNIQUE` en email) se traducen a errores de dominio legibles.
+
 ## Estado de Implementación
 
 - [x] Contrato Protobuf (`auth.proto`) y código generado.
 - [x] Migración SQL para la tabla `users`.
-- [ ] Capa repository (persistencia PostgreSQL).
+- [x] Capa repository (persistencia PostgreSQL).
 - [ ] Capa service (lógica de negocio, bcrypt, JWT).
 - [ ] Capa transport (servidor gRPC).
 - [ ] Punto de entrada (`cmd/auth-service/main.go`).
