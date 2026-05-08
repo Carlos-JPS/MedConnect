@@ -135,10 +135,45 @@ services:
     networks:
       - medconnect_internal
 
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    environment:
+      AUTH_SERVICE_HOST: ${AUTH_SERVICE_HOST:-0.0.0.0}
+      AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT:-50051}
+      AUTH_DB_DSN: ${AUTH_DB_DSN:-postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-medconnect-jwt-secret-change-me}
+    expose:
+      - "${AUTH_SERVICE_PORT:-50051}"
+    depends_on:
+      auth_db:
+        condition: service_healthy
+    networks:
+      - medconnect_internal
+
+  auth_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
+      POSTGRES_USER: ${AUTH_DB_USER:-auth}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+      - ./auth-service/migrations/000001_create_users_table.up.sql:/docker-entrypoint-initdb.d/001_create_users_table.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER:-auth} -d ${AUTH_DB_NAME:-auth_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medconnect_internal
+
 volumes:
   availability-db-data:
   booking_db_data:
   payments_db_data:
+  auth_db_data:
 
 networks:
   medconnect_internal:
