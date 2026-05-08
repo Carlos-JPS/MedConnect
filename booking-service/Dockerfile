@@ -3,6 +3,7 @@ FROM golang:1.26-alpine AS build
 WORKDIR /workspace
 
 COPY payment-service ./payment-service
+COPY availability-service ./availability-service
 COPY booking-service ./booking-service
 
 WORKDIR /workspace/booking-service
