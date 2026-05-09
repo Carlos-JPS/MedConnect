@@ -56,6 +56,8 @@ type fakeAvailabilityClient struct {
 	holdInput    HoldSlotInput
 	releaseInput ReleaseHeldSlotInput
 	confirmInput ConfirmSlotBookingInput
+	releaseCalls int
+	confirmCalls int
 	holdErr      error
 	releaseErr   error
 	confirmErr   error
@@ -72,11 +74,13 @@ func (c *fakeAvailabilityClient) HoldSlot(ctx context.Context, input HoldSlotInp
 }
 
 func (c *fakeAvailabilityClient) ReleaseHeldSlot(_ context.Context, input ReleaseHeldSlotInput) error {
+	c.releaseCalls++
 	c.releaseInput = input
 	return c.releaseErr
 }
 
 func (c *fakeAvailabilityClient) ConfirmSlotBooking(_ context.Context, input ConfirmSlotBookingInput) error {
+	c.confirmCalls++
 	c.confirmInput = input
 	return c.confirmErr
 }
@@ -85,9 +89,11 @@ type fakePaymentClient struct {
 	status PaymentStatus
 	err    error
 	id     string
+	calls  int
 }
 
 func (c *fakePaymentClient) GetPaymentStatus(_ context.Context, paymentID string) (PaymentStatus, error) {
+	c.calls++
 	c.id = paymentID
 	return c.status, c.err
 }
@@ -271,5 +277,93 @@ func TestCancelBookingReturnsControlledErrorWhenAvailabilityFails(t *testing.T) 
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("expected appointment not to be updated when availability release fails")
+	}
+}
+
+func TestCancelBookingReturnsExistingBookingWhenAlreadyCancelled(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusCancelled},
+	}
+	availability := &fakeAvailabilityClient{releaseErr: errors.New("should not release")}
+	svc := NewBookingService(repo, WithAvailabilityClient(availability))
+
+	booking, err := svc.CancelBooking(context.Background(), CancelBookingInput{BookingID: "booking-1"})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if booking.Status != StatusCancelled {
+		t.Fatalf("expected cancelled booking, got %v", booking.Status)
+	}
+	if availability.releaseCalls != 0 {
+		t.Fatalf("expected no availability release for already cancelled booking")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected no repository update for already cancelled booking")
+	}
+}
+
+func TestConfirmBookingReturnsExistingBookingWhenAlreadyConfirmed(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusConfirmed},
+	}
+	availability := &fakeAvailabilityClient{confirmErr: errors.New("should not confirm")}
+	payment := &fakePaymentClient{err: errors.New("should not validate")}
+	svc := NewBookingService(
+		repo,
+		WithAvailabilityClient(availability),
+		WithPaymentClient(payment),
+	)
+
+	booking, err := svc.ConfirmBooking(context.Background(), ConfirmBookingInput{
+		BookingID: "booking-1",
+		PaymentID: "payment-1",
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if booking.Status != StatusConfirmed {
+		t.Fatalf("expected confirmed booking, got %v", booking.Status)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment validation for already confirmed booking")
+	}
+	if availability.confirmCalls != 0 {
+		t.Fatalf("expected no availability confirmation for already confirmed booking")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected no repository update for already confirmed booking")
+	}
+}
+
+func TestConfirmBookingRejectsCancelledBookingWithoutExternalCalls(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusCancelled},
+	}
+	availability := &fakeAvailabilityClient{confirmErr: errors.New("should not confirm")}
+	payment := &fakePaymentClient{err: errors.New("should not validate")}
+	svc := NewBookingService(
+		repo,
+		WithAvailabilityClient(availability),
+		WithPaymentClient(payment),
+	)
+
+	_, err := svc.ConfirmBooking(context.Background(), ConfirmBookingInput{
+		BookingID: "booking-1",
+		PaymentID: "payment-1",
+	})
+
+	if err == nil {
+		t.Fatal("expected invalid state error")
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment validation for cancelled booking")
+	}
+	if availability.confirmCalls != 0 {
+		t.Fatalf("expected no availability confirmation for cancelled booking")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected no repository update for cancelled booking")
 	}
 }

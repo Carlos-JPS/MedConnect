@@ -118,7 +118,10 @@ const (
 	PaymentStatusRefunded    PaymentStatus = "REFUNDED"
 )
 
-var ErrExternalDependency = errors.New("fallo en dependencia externa")
+var (
+	ErrExternalDependency  = errors.New("fallo en dependencia externa")
+	ErrInvalidBookingState = errors.New("estado de reserva invalido")
+)
 
 type AvailabilityClient interface {
 	HoldSlot(ctx context.Context, input HoldSlotInput) error
@@ -243,6 +246,9 @@ func (s *bookingService) CancelBooking(ctx context.Context, input CancelBookingI
 	if err != nil {
 		return Booking{}, err
 	}
+	if booking.Status == StatusCancelled {
+		return booking, nil
+	}
 
 	externalCtx, cancel := s.externalContext(ctx)
 	defer cancel()
@@ -281,6 +287,12 @@ func (s *bookingService) ConfirmBooking(ctx context.Context, input ConfirmBookin
 	booking, err := s.repo.GetBooking(ctx, input.BookingID)
 	if err != nil {
 		return Booking{}, err
+	}
+	switch booking.Status {
+	case StatusConfirmed:
+		return booking, nil
+	case StatusCancelled, StatusExpired:
+		return Booking{}, fmt.Errorf("%w: no se puede confirmar una reserva %s", ErrInvalidBookingState, booking.Status)
 	}
 
 	externalCtx, cancel := s.externalContext(ctx)
@@ -358,6 +370,21 @@ func (s *bookingService) externalContext(ctx context.Context) (context.Context, 
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, s.externalCallTimeout)
+}
+
+func (status Status) String() string {
+	switch status {
+	case StatusPendingPayment:
+		return "PENDING_PAYMENT"
+	case StatusConfirmed:
+		return "CONFIRMED"
+	case StatusCancelled:
+		return "CANCELLED"
+	case StatusExpired:
+		return "EXPIRED"
+	default:
+		return "UNSPECIFIED"
+	}
 }
 
 func (status PaymentStatus) IsApproved() bool {
