@@ -36,14 +36,19 @@ func (c *GRPCClient) Close() error {
 	return c.conn.Close()
 }
 
-func (c *GRPCClient) GetPaymentStatus(ctx context.Context, paymentID string) (service.PaymentStatus, error) {
+func (c *GRPCClient) GetPayment(ctx context.Context, paymentID string) (service.PaymentDetails, error) {
 	resp, err := c.client.GetPayment(ctx, &pb.GetPaymentRequest{PaymentId: paymentID})
 	if err != nil {
-		return service.PaymentStatusUnspecified, err
+		return service.PaymentDetails{}, err
 	}
 	if resp.GetPayment() == nil {
-		return service.PaymentStatusUnspecified, errors.New("payment-service respondio sin pago")
+		return service.PaymentDetails{}, errors.New("payment-service respondio sin pago")
 	}
 
-	return service.PaymentStatus(strings.ToUpper(resp.GetPayment().GetStatus())), nil
+	payment := resp.GetPayment()
+	return service.PaymentDetails{
+		PaymentID: payment.GetPaymentId(),
+		BookingID: payment.GetBookingId(),
+		Status:    service.PaymentStatus(strings.ToUpper(payment.GetStatus())),
+	}, nil
 }

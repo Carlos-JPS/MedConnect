@@ -61,6 +61,7 @@ services:
     volumes:
       - booking_db_data:/var/lib/postgresql/data
       - ./booking-service/migrations/000001_create_booking_tables.up.sql:/docker-entrypoint-initdb.d/001_create_booking_tables.sql:ro
+      - ./booking-service/migrations/000002_allow_rebooking_cancelled_slots.up.sql:/docker-entrypoint-initdb.d/002_allow_rebooking_cancelled_slots.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${BOOKING_DB_USER:-booking} -d ${BOOKING_DB_NAME:-booking_db}"]
       interval: 5s
@@ -96,7 +97,7 @@ services:
       POSTGRES_DB: ${PAYMENTS_DB_NAME:-payments_db}
     volumes:
       - payments_db_data:/var/lib/postgresql/data
-      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./payment-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PAYMENTS_DB_USER:-postgres} -d ${PAYMENTS_DB_NAME:-payments_db}"]
       interval: 5s
@@ -110,9 +111,15 @@ services:
       context: ./availability-service
       dockerfile: Dockerfile
     container_name: availability-service
-    env_file: ./availability-service/.env
+    environment:
+      DB_HOST: availability-db
+      DB_PORT: 5432
+      DB_USER: ${AVAILABILITY_DB_USER:-postgres}
+      DB_PASSWORD: ${AVAILABILITY_DB_PASSWORD:-postgres}
+      DB_NAME: ${AVAILABILITY_DB_NAME:-availability_db}
+      GRPC_PORT: ${AVAILABILITY_SERVICE_PORT:-50051}
     expose:
-      - "50051"
+      - "${AVAILABILITY_SERVICE_PORT:-50051}"
     depends_on:
       availability-db:
         condition: service_healthy
@@ -128,7 +135,8 @@ services:
       POSTGRES_DB: ${AVAILABILITY_DB_NAME:-availability_db}
     volumes:
       - availability-db-data:/var/lib/postgresql/data
-      - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./availability-service/db/002_seed_demo_slots.sql:/docker-entrypoint-initdb.d/002_seed_demo_slots.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER:-postgres} -d ${AVAILABILITY_DB_NAME:-availability_db}"]
       interval: 5s

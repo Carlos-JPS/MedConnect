@@ -862,6 +862,8 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err.Error())
 	case codes.InvalidArgument:
 		writeError(w, http.StatusBadRequest, err.Error())
+	case codes.FailedPrecondition:
+		writeError(w, http.StatusConflict, err.Error())
 	case codes.DeadlineExceeded, codes.Unavailable, codes.Unknown:
 		writeError(w, http.StatusBadGateway, err.Error())
 	default:

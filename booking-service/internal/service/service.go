@@ -118,7 +118,16 @@ const (
 	PaymentStatusRefunded    PaymentStatus = "REFUNDED"
 )
 
-var ErrExternalDependency = errors.New("fallo en dependencia externa")
+type PaymentDetails struct {
+	PaymentID string
+	BookingID string
+	Status    PaymentStatus
+}
+
+var (
+	ErrExternalDependency  = errors.New("fallo en dependencia externa")
+	ErrInvalidBookingState = errors.New("estado de reserva invalido")
+)
 
 type AvailabilityClient interface {
 	HoldSlot(ctx context.Context, input HoldSlotInput) error
@@ -127,7 +136,7 @@ type AvailabilityClient interface {
 }
 
 type PaymentClient interface {
-	GetPaymentStatus(ctx context.Context, paymentID string) (PaymentStatus, error)
+	GetPayment(ctx context.Context, paymentID string) (PaymentDetails, error)
 }
 
 type Repository interface {
@@ -243,6 +252,12 @@ func (s *bookingService) CancelBooking(ctx context.Context, input CancelBookingI
 	if err != nil {
 		return Booking{}, err
 	}
+	if booking.Status == StatusCancelled {
+		return booking, nil
+	}
+	if booking.Status != StatusPendingPayment {
+		return Booking{}, fmt.Errorf("%w: no se puede cancelar una reserva %s", ErrInvalidBookingState, booking.Status)
+	}
 
 	externalCtx, cancel := s.externalContext(ctx)
 	defer cancel()
@@ -282,15 +297,27 @@ func (s *bookingService) ConfirmBooking(ctx context.Context, input ConfirmBookin
 	if err != nil {
 		return Booking{}, err
 	}
+	switch booking.Status {
+	case StatusConfirmed:
+		return booking, nil
+	case StatusCancelled, StatusExpired:
+		return Booking{}, fmt.Errorf("%w: no se puede confirmar una reserva %s", ErrInvalidBookingState, booking.Status)
+	}
 
 	externalCtx, cancel := s.externalContext(ctx)
 	defer cancel()
-	paymentStatus, err := s.payment.GetPaymentStatus(externalCtx, input.PaymentID)
+	payment, err := s.payment.GetPayment(externalCtx, input.PaymentID)
 	if err != nil {
 		return Booking{}, fmt.Errorf("%w: validar pago: %v", ErrExternalDependency, err)
 	}
-	if !paymentStatus.IsApproved() {
-		return Booking{}, fmt.Errorf("pago %s no aprobado: %s", input.PaymentID, paymentStatus)
+	if payment.BookingID == "" {
+		return Booking{}, fmt.Errorf("%w: pago %s no informa reserva asociada", ErrInvalidBookingState, input.PaymentID)
+	}
+	if payment.BookingID != booking.BookingID {
+		return Booking{}, fmt.Errorf("%w: pago %s pertenece a la reserva %s", ErrInvalidBookingState, input.PaymentID, payment.BookingID)
+	}
+	if !payment.Status.IsApproved() {
+		return Booking{}, fmt.Errorf("pago %s no aprobado: %s", input.PaymentID, payment.Status)
 	}
 
 	externalCtx, cancel = s.externalContext(ctx)
@@ -360,6 +387,21 @@ func (s *bookingService) externalContext(ctx context.Context) (context.Context, 
 	return context.WithTimeout(ctx, s.externalCallTimeout)
 }
 
+func (status Status) String() string {
+	switch status {
+	case StatusPendingPayment:
+		return "PENDING_PAYMENT"
+	case StatusConfirmed:
+		return "CONFIRMED"
+	case StatusCancelled:
+		return "CANCELLED"
+	case StatusExpired:
+		return "EXPIRED"
+	default:
+		return "UNSPECIFIED"
+	}
+}
+
 func (status PaymentStatus) IsApproved() bool {
 	return status == PaymentStatusApproved || status == PaymentStatusCompleted
 }
@@ -380,6 +422,6 @@ func (noopAvailabilityClient) ConfirmSlotBooking(context.Context, ConfirmSlotBoo
 
 type noopPaymentClient struct{}
 
-func (noopPaymentClient) GetPaymentStatus(context.Context, string) (PaymentStatus, error) {
-	return PaymentStatusApproved, nil
+func (noopPaymentClient) GetPayment(_ context.Context, paymentID string) (PaymentDetails, error) {
+	return PaymentDetails{PaymentID: paymentID, Status: PaymentStatusApproved}, nil
 }

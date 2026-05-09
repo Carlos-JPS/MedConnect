@@ -18,6 +18,7 @@ func (fakePaymentServiceServer) GetPayment(context.Context, *paymentpb.GetPaymen
 	return &paymentpb.GetPaymentResponse{
 		Payment: &paymentpb.Payment{
 			PaymentId: "payment-1",
+			BookingId: "booking-1",
 			Status:    "COMPLETED",
 		},
 	}, nil
@@ -46,11 +47,14 @@ func TestGRPCClientUsesPaymentServiceContract(t *testing.T) {
 		_ = client.Close()
 	})
 
-	status, err := client.GetPaymentStatus(context.Background(), "payment-1")
+	payment, err := client.GetPayment(context.Background(), "payment-1")
 	if err != nil {
-		t.Fatalf("get payment status: %v", err)
+		t.Fatalf("get payment: %v", err)
 	}
-	if status != service.PaymentStatusCompleted {
-		t.Fatalf("expected COMPLETED status, got %q", status)
+	if payment.Status != service.PaymentStatusCompleted {
+		t.Fatalf("expected COMPLETED status, got %q", payment.Status)
+	}
+	if payment.BookingID != "booking-1" {
+		t.Fatalf("expected booking-1, got %q", payment.BookingID)
 	}
 }
