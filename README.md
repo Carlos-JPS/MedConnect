@@ -103,6 +103,21 @@ docker exec availability-db psql -U postgres -d availability_db \
   -c "SELECT id, status, start_time FROM availability_slots ORDER BY start_time;"
 ```
 
+### Seed de Payment
+
+El frontend trae preconfigurado el pago demo `b7d8f1b0-af07-4e57-8859-e929aa77e2fc` para confirmar reservas durante la demostracion. En una base nueva, Docker ejecuta `payment-service/db/init.sql` y `payment-service/db/002_seed_demo_payment.sql`. Si `payments-db` ya existia, aplica el seed manualmente:
+
+```bash
+docker exec -i medconnect-payments-db-1 psql -U postgres -d payments_db < payment-service/db/002_seed_demo_payment.sql
+```
+
+Para comprobar el pago demo:
+
+```bash
+docker exec medconnect-payments-db-1 psql -U postgres -d payments_db \
+  -c "SELECT payment_id, status FROM payments WHERE payment_id = 'b7d8f1b0-af07-4e57-8859-e929aa77e2fc';"
+```
+
 ## Endpoints de Autenticación
 
 ### Registro de Usuario
@@ -182,7 +197,7 @@ La respuesta incluye la reserva y sus eventos persistidos.
 
 ### Confirmar Reserva
 
-Primero debe existir un pago aprobado o completado en `payment-service`.
+Primero debe existir un pago aprobado o completado en `payment-service`. Para la demo del frontend se incluye el pago completado `b7d8f1b0-af07-4e57-8859-e929aa77e2fc`.
 
 ```bash
 curl -X POST http://localhost:8080/bookings/{booking_id}/confirm \
@@ -249,7 +264,7 @@ curl http://localhost:8080/payments/{payment_id}
 8. Confirmar la reserva con el `payment_id`.
 9. Cancelar una reserva y verificar el cambio de estado.
 
-Si repites la demo con el mismo slot, `availability-service` puede rechazar la reserva porque el slot ya quedo `held` o `booked`. Usa otro slot demo o reinicia los volumenes si necesitas volver al estado inicial.
+Si repites la demo con el mismo slot, `availability-service` puede rechazar la reserva porque el slot ya quedo `held` o `booked`. Usa otro slot demo, cancela la reserva para liberar el slot o reinicia los volumenes si necesitas volver al estado inicial.
 
 ## Pruebas con Insomnia
 
