@@ -40,3 +40,8 @@ Rubrica_Tecnica_Microservicios.md
 
 node_modules/
 dist/auth-service-bin
+availability-service/availability-service
+booking-service/booking-service
+payment-service/payment-service
+api-gateway/api-gateway
+auth-service/auth-service
