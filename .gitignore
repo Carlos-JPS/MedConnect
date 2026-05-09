@@ -35,6 +35,7 @@ dist/
 *~
 .DS_Store
 Thumbs.db
+Rubrica_Tecnica_Microservicios.md
 
 node_modules/
 dist/auth-service-bin
