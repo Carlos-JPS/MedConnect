@@ -8,7 +8,7 @@ import (
 	"github.com/MedConnect/auth-service/internal/repository/postgres"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Errores de lógica de negocio

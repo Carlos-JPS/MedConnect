@@ -67,6 +67,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.registerUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/auth/login":
 		h.loginUser(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/validate":
+		h.validateToken(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/auth/users/"):
+		h.getUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/bookings":
 		h.createBooking(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/bookings":
@@ -934,6 +938,65 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 		"user_id":      resp.GetUserId(),
 		"role":         resp.GetRole(),
 		"expires_at":   timestampToJSON(resp.GetExpiresAt()),
+	})
+}
+
+type validateTokenRequest struct {
+	AccessToken string `json:"access_token"`
+}
+
+func (h *Handler) validateToken(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthClient(w) {
+		return
+	}
+
+	var req validateTokenRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+
+	resp, err := h.auth.ValidateToken(r.Context(), &authpb.ValidateTokenRequest{
+		AccessToken: req.AccessToken,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"valid":   resp.GetValid(),
+		"user_id": resp.GetUserId(),
+		"role":    resp.GetRole(),
+	})
+}
+
+func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthClient(w) {
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/auth/users/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "ID de usuario requerido")
+		return
+	}
+
+	resp, err := h.auth.GetUserById(r.Context(), &authpb.GetUserByIdRequest{
+		UserId: id,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_id":    resp.GetUserId(),
+		"full_name":  resp.GetFullName(),
+		"email":      resp.GetEmail(),
+		"role":       resp.GetRole(),
+		"is_active":  resp.GetIsActive(),
+		"created_at": timestampToJSON(resp.GetCreatedAt()),
 	})
 }
 

@@ -73,6 +73,53 @@ collection:
             send: true
             store: true
           rebuildPath: true
+      - url: "{{ _.base_url }}/auth/validate"
+        name: Validate Token
+        meta:
+          id: req_auth_validate
+          created: 1778130003000
+          modified: 1778130003000
+          isPrivate: false
+          description: "Verifica si un token JWT es válido."
+          sortKey: -1778130003000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "access_token": "COPIA_AQUI_EL_TOKEN_DEL_LOGIN"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/auth/users/COPIA_EL_USER_ID_AQUI"
+        name: Get User Profile
+        meta:
+          id: req_auth_profile
+          created: 1778130004000
+          modified: 1778130004000
+          isPrivate: false
+          description: "Obtiene los detalles públicos de un usuario."
+          sortKey: -1778130004000
+        method: GET
+        body: {}
+        headers: []
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
   - name: Bookings
     meta:
       id: fld_bookings_medconnect
