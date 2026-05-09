@@ -27,6 +27,7 @@ dist/
 .env.prod
 .env.dev
 *.local
+Rubrica_Tecnica_Microservicios.md
 
 # Archivos de IDE y sistema operativo
 .idea/
