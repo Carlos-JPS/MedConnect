@@ -10,12 +10,14 @@ Sistema de gestion clinica hospitalaria basado en microservicios. Para esta entr
 - **api-gateway**: unica entrada HTTP externa. Expone endpoints REST de autenticación, reservas y pagos.
 - **auth-service**: servicio gRPC de autenticación y usuarios. Maneja registro, login y validación de tokens JWT.
 - **booking-service**: servicio gRPC de reservas. Persiste citas y eventos en PostgreSQL.
+- **availability-service**: servicio gRPC de disponibilidad. Persiste agendas y slots médicos en PostgreSQL.
 - **payment-service**: servicio gRPC de pagos. Persiste pagos, transacciones y reembolsos en PostgreSQL.
 - **auth_db**: base PostgreSQL de usuarios.
 - **booking_db**: base PostgreSQL de reservas.
+- **availability-db**: base PostgreSQL de disponibilidad.
 - **payments-db**: base PostgreSQL de pagos.
 
-Servicios como `availability-service` todavia no estan completos en este repositorio. `booking-service` ya tiene cliente gRPC y manejo de errores para esa dependencia, pero los casos `CreateBooking`, `CancelBooking` y `ConfirmBooking` requieren que availability implemente `HoldSlot`, `ReleaseHeldSlot` y `ConfirmSlotBooking` para una demo end-to-end completa.
+`booking-service` integra `availability-service` por gRPC para bloquear, confirmar y liberar slots. La demo depende de que `availability-db` tenga cargados los slots definidos en `availability-service/db/002_seed_demo_slots.sql`.
 
 ## Puertos
 
@@ -71,7 +73,7 @@ docker compose ps
 Ver logs:
 
 ```bash
-docker compose logs -f api-gateway booking-service payment-service
+docker compose logs -f api-gateway booking-service availability-service payment-service
 ```
 
 Detener:
@@ -84,6 +86,21 @@ Detener y borrar volumenes de datos:
 
 ```bash
 docker compose down -v
+```
+
+### Seed de Availability
+
+En una base nueva, Docker ejecuta automaticamente `availability-service/db/init.sql` y `availability-service/db/002_seed_demo_slots.sql`. Si `availability-db` ya existia antes de agregar el seed, aplicalo manualmente:
+
+```bash
+docker exec -i availability-db psql -U postgres -d availability_db < availability-service/db/002_seed_demo_slots.sql
+```
+
+Para comprobar los slots demo:
+
+```bash
+docker exec availability-db psql -U postgres -d availability_db \
+  -c "SELECT id, status, start_time FROM availability_slots ORDER BY start_time;"
 ```
 
 ## Endpoints de Autenticación
@@ -131,7 +148,7 @@ curl -X POST http://localhost:8080/bookings \
   }'
 ```
 
-Respuesta esperada si `availability-service` esta disponible:
+Respuesta esperada si `availability-service` esta disponible y el slot esta en estado `available`:
 
 ```json
 {
@@ -141,7 +158,7 @@ Respuesta esperada si `availability-service` esta disponible:
 }
 ```
 
-Si `availability-service` no esta implementado o no esta levantado, el gateway devuelve un error controlado proveniente de `booking-service`.
+Si el slot no existe o ya fue usado, el gateway devuelve un error controlado proveniente de `availability-service` indicando que el slot no esta en estado `available`.
 
 ### Listar Reservas de Paciente
 
@@ -232,7 +249,7 @@ curl http://localhost:8080/payments/{payment_id}
 8. Confirmar la reserva con el `payment_id`.
 9. Cancelar una reserva y verificar el cambio de estado.
 
-Mientras `availability-service` no exista, los pasos que reservan, confirman o liberan slots sirven para demostrar resiliencia y traduccion de errores, pero no para completar el flujo end-to-end exitoso.
+Si repites la demo con el mismo slot, `availability-service` puede rechazar la reserva porque el slot ya quedo `held` o `booked`. Usa otro slot demo o reinicia los volumenes si necesitas volver al estado inicial.
 
 ## Pruebas con Insomnia
 
