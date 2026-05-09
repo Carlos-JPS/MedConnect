@@ -36,6 +36,7 @@ Rubrica_Tecnica_Microservicios.md
 *~
 .DS_Store
 Thumbs.db
+Rubrica_Tecnica_Microservicios.md
 
 node_modules/
-dist/
+dist/auth-service-bin

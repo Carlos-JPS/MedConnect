@@ -7,9 +7,11 @@ Sistema de gestion clinica hospitalaria basado en microservicios. Para esta entr
 ## Arquitectura Actual
 
 - **frontend**: cliente web React para demostrar el flujo de reservas desde navegador.
-- **api-gateway**: unica entrada HTTP externa. Expone endpoints REST de reservas y pagos.
+- **api-gateway**: unica entrada HTTP externa. Expone endpoints REST de autenticación, reservas y pagos.
+- **auth-service**: servicio gRPC de autenticación y usuarios. Maneja registro, login y validación de tokens JWT.
 - **booking-service**: servicio gRPC de reservas. Persiste citas y eventos en PostgreSQL.
 - **payment-service**: servicio gRPC de pagos. Persiste pagos, transacciones y reembolsos en PostgreSQL.
+- **auth_db**: base PostgreSQL de usuarios.
 - **booking_db**: base PostgreSQL de reservas.
 - **payments-db**: base PostgreSQL de pagos.
 
@@ -19,6 +21,7 @@ Servicios como `availability-service` todavia no estan completos en este reposit
 
 - Frontend: `http://localhost:5173`
 - API Gateway: `http://localhost:8080`
+- `auth-service`: gRPC interno `50051`
 - `booking-service`: gRPC interno `50051`
 - `payment-service`: gRPC interno `50051`
 
@@ -82,6 +85,34 @@ Detener y borrar volumenes de datos:
 ```bash
 docker compose down -v
 ```
+
+## Endpoints de Autenticación
+
+### Registro de Usuario
+
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "paciente@test.com",
+    "password": "password123",
+    "full_name": "Juan Perez",
+    "role": "PATIENT"
+  }'
+```
+
+### Inicio de Sesión
+
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "paciente@test.com",
+    "password": "password123"
+  }'
+```
+
+La respuesta incluye un `access_token` (JWT) válido por 24 horas.
 
 ## Endpoints de Booking
 
@@ -228,6 +259,7 @@ docker run --rm -v "$PWD":/workspace -w /workspace/api-gateway golang:1.26-alpin
 ```text
 MedConnect/
 ├── api-gateway/                    # Gateway HTTP unificado
+├── auth-service/                   # Servicio gRPC de autenticación
 ├── booking-service/                # Servicio gRPC de reservas
 ├── frontend/                       # Cliente web React
 ├── payment-service/                # Servicio gRPC de pagos

@@ -1,0 +1,650 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Scratch Pad
+meta:
+  id: wrk_scratchpad
+  created: 1774960302076
+  modified: 1774960302076
+  description: ""
+collection:
+  - url: https://www.getonbrd.com/api/v0//search/jobs?country_code=CL&page=1&per_page=120
+    name: New Request
+    meta:
+      id: req_af94df5ca4864901abe569f3a76347c8
+      created: 1774960347078
+      modified: 1774960360676
+      isPrivate: false
+      description: ""
+      sortKey: -1774960347078
+    method: GET
+    headers:
+      - name: User-Agent
+        value: insomnia/12.4.0
+        description: ""
+        disabled: false
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - name: Payments
+    meta:
+      id: fld_50bb4e9788fd4e2fbb9cce855be7b0ca
+      created: 1778128210470
+      modified: 1778128229155
+      sortKey: -1778128210470
+      description: Flujo de pagos por api-gateway
+    children:
+      - url: "{{ _.base_url }}/payments"
+        name: Create Payment
+        meta:
+          id: req_076b43b5eb144dca94a5437072a47323
+          created: 1778128115521
+          modified: 1778128223348
+          isPrivate: false
+          description: Crea un pago asociado a una reserva.
+          sortKey: -1778128223317
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "booking_id": "{{ _.booking_id }}",
+              "user_id": "{{ _.patient_id }}",
+              "amount": 15000,
+              "currency": "CLP"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/payments/{{ _.payment_id }}/process"
+        name: Process Payment
+        meta:
+          id: req_75dc2487a2a94cb48b43b9fa7fd2ee8c
+          created: 1778128230036
+          modified: 1778128304431
+          isPrivate: false
+          description: Procesa un pago y lo deja COMPLETED si el procesador demo responde
+            bien.
+          sortKey: -1778128230036
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "payment_method_id": "{{ _.payment_method_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/payments/{{ _.payment_id }}"
+        name: Get Payment By Id
+        meta:
+          id: req_82aee48a36904e6c95b89d7e37c92d7f
+          created: 1778128320462
+          modified: 1778128354654
+          isPrivate: false
+          description: Consulta pago por ID.
+          sortKey: -1778128223217
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/payments/user/{{ _.patient_id }}"
+        name: Get User Payments
+        meta:
+          id: req_859c1d34520a43c3941440e70901f666
+          created: 1778128387951
+          modified: 1778128417610
+          isPrivate: false
+          description: Lista pagos por usuario/paciente.
+          sortKey: -1778128223117
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/payments/booking/{{ _.booking_id }}"
+        name: Get Payment By Booking
+        meta:
+          id: req_2dcc150bf468452297fa05ebe2acefcb
+          created: 1778128425000
+          modified: 1778128425000
+          isPrivate: false
+          description: Obtiene el pago asociado a una reserva.
+          sortKey: -1778128223067
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/payments/{{ _.payment_id }}/refund"
+        name: Process Refund
+        meta:
+          id: req_9c6f4b2edb124fd5822dc69cfc0fee43
+          created: 1778128447282
+          modified: 1778128517804
+          isPrivate: false
+          description: Procesa reembolso sobre un pago COMPLETED.
+          sortKey: -1778128223017
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "amount": 15000,
+              "reason": "Paciente canceló la hora"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Bookings
+    meta:
+      id: fld_620de59e2fec4f36a48f510d8a5af110
+      created: 1778129000000
+      modified: 1778129000000
+      sortKey: -1778129000000
+      description: Flujo de reservas por api-gateway
+    children:
+      - url: "{{ _.base_url }}/bookings"
+        name: Create Booking
+        meta:
+          id: req_886db454d1aa4745bc63dbb4a924b0c3
+          created: 1778129001000
+          modified: 1778129001000
+          isPrivate: false
+          description: Crea reserva PENDING_PAYMENT. Requiere availability-service real
+            para respuesta exitosa.
+          sortKey: -1778129001000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "patient_id": "{{ _.patient_id }}",
+              "doctor_id": "{{ _.doctor_id }}",
+              "slot_id": "{{ _.slot_id }}",
+              "notes": "Reserva creada desde Insomnia"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/bookings?patient_id={{ _.patient_id }}"
+        name: List Patient Bookings
+        meta:
+          id: req_86a94ead7cfb429db3aa6b8ff09c06f2
+          created: 1778129002000
+          modified: 1778129002000
+          isPrivate: false
+          description: Lista reservas de un paciente.
+          sortKey: -1778129002000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/bookings?patient_id={{ _.patient_id
+          }}&status=PENDING_PAYMENT"
+        name: List Pending Bookings
+        meta:
+          id: req_feb7e01c3ed8446b8bc29f54f95826c9
+          created: 1778129003000
+          modified: 1778129003000
+          isPrivate: false
+          description: Lista reservas pendientes de pago.
+          sortKey: -1778129003000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}"
+        name: Get Booking Detail
+        meta:
+          id: req_52a392d819b34f3ba6483a603d5f5cd8
+          created: 1778129004000
+          modified: 1778129004000
+          isPrivate: false
+          description: Obtiene reserva y eventos.
+          sortKey: -1778129004000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}/confirm"
+        name: Confirm Booking
+        meta:
+          id: req_6f22d56a18f64a07891d84e74255167b
+          created: 1778129005000
+          modified: 1778129005000
+          isPrivate: false
+          description: Confirma una reserva usando payment-service y availability-service.
+          sortKey: -1778129005000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "payment_id": "{{ _.payment_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}/cancel"
+        name: Cancel Booking
+        meta:
+          id: req_2075b50b8fe24420b54eeec9897dcc35
+          created: 1778129006000
+          modified: 1778129006000
+          isPrivate: false
+          description: Cancela una reserva y libera el slot en availability-service.
+          sortKey: -1778129006000
+        method: PATCH
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "reason": "Paciente solicita reagendar"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Availability
+    meta:
+      id: fld_216bd60e381945eab370d478185dd3e4
+      created: 1778129100000
+      modified: 1778129100000
+      sortKey: -1778129100000
+      description: Endpoints de disponibilidad por api-gateway
+    children:
+      - url: "{{ _.base_url
+          }}/availability/slots?specialty=Cardiolog%C3%ADa&from_date=2026-05-01\
+          T00:00:00-04:00&to_date=2026-05-31T23:59:59-04:00"
+        name: Get Available Slots
+        meta:
+          id: req_d99e02d9a98a49c3bf4765f31821af9c
+          created: 1778129101000
+          modified: 1778129101000
+          isPrivate: false
+          description: Busca slots disponibles por especialidad y rango de fechas.
+          sortKey: -1778129101000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/doctors/{{ _.doctor_id
+          }}?from_date=2026-05-01T00:00:00-04:00&to_date=2026-05-31T23:59:59-04\
+          :00"
+        name: Get Doctor Agenda
+        meta:
+          id: req_ed517a90b7c142d685870adc9ac0252e
+          created: 1778129102000
+          modified: 1778129102000
+          isPrivate: false
+          description: Obtiene la agenda completa de un doctor (incluye todos los estados).
+          sortKey: -1778129102000
+        method: GET
+        headers:
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/hold"
+        name: Hold Slot
+        meta:
+          id: req_1945d71a3fe94b84b0a5c4a7f5c11c2e
+          created: 1778129103000
+          modified: 1778129103000
+          isPrivate: false
+          description: Bloquea temporalmente un slot (available -> held).
+          sortKey: -1778129103000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}",
+              "held_until": "2026-05-10T15:00:00-04:00"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/confirm"
+        name: Confirm Slot Booking
+        meta:
+          id: req_f5a055b8ea154803ae50041435ee26dc
+          created: 1778129104000
+          modified: 1778129104000
+          isPrivate: false
+          description: Confirma un slot previamente bloqueado (held -> booked).
+          sortKey: -1778129104000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/availability/release"
+        name: Release Held Slot
+        meta:
+          id: req_4a6d9420b3e345f49b0feed010ed1098
+          created: 1778129105000
+          modified: 1778129105000
+          isPrivate: false
+          description: Libera un slot bloqueado (held -> available).
+          sortKey: -1778129105000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "slot_id": "{{ _.slot_id }}",
+              "booking_id": "{{ _.booking_id }}"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: User-Agent
+            value: insomnia/12.5.0
+            disabled: false
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Authentication
+    meta:
+      id: fld_0dea46763e864f4a9c4fc17f86e5a59b
+      created: 1778130000000
+      modified: 1778130000000
+      sortKey: -1778130000000
+      description: Registro e inicio de sesión
+    children:
+      - url: http://localhost:8080/auth/register
+        name: Register User
+        meta:
+          id: req_7c577b34cdee468f949ccdbb6b6a1563
+          created: 1778130001000
+          modified: 1778291872725
+          isPrivate: false
+          description: Registra un nuevo usuario en el sistema.
+          sortKey: -1778130001000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "email": "pacienteeee@test.com",
+              "password": "password123",
+              "full_name": "Juan Gonzalez",
+              "role": "PATIENT"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/auth/login
+        name: Login User
+        meta:
+          id: req_d19a061dc4d5437f85b286b663dcb966
+          created: 1778130002000
+          modified: 1778291917166
+          isPrivate: false
+          description: Inicia sesión y obtiene el JWT.
+          sortKey: -1778130002000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "email": "pacienteeee@test.com",
+              "password": "password123"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/auth/validate
+        name: Validar token
+        meta:
+          id: req_2e7773bd3dd74dd688f69e9854dd1ee0
+          created: 1778292605458
+          modified: 1778292636101
+          isPrivate: false
+          description: Registra un nuevo usuario en el sistema.
+          sortKey: -1778129553000
+        method: POST
+        body:
+          mimeType: application/json
+          text: >
+            {
+              "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzgzNzgzMjAsInJvbGUiOiJQQVRJRU5UIiwidXNlcl9pZCI6IjI0N2M4YzU1LWI5YjUtNDVlNi1iMDNiLWFmNmM5MDBjZjg0NCJ9.j-Hc6QuRG7PTYw0YjcJGQuEkaMKEAlzIGU3HyMaKisQ"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:8080/auth/users/{247c8c55-b9b5-45e6-b03b-af6c900cf844}
+        name: Get User By Id
+        meta:
+          id: req_1d36202ec21f4d1db7f4949ac57fc6d7
+          created: 1778292683765
+          modified: 1778292748986
+          isPrivate: false
+          description: Registra un nuevo usuario en el sistema.
+          sortKey: -1778129329000
+        method: GET
+        body:
+          mimeType: application/json
+          text: ""
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_99d30891da4bdcebc63947a8fc17f076de878684
+    created: 1774960314357
+    modified: 1774960314357
+environments:
+  name: Base Environment
+  meta:
+    id: env_99d30891da4bdcebc63947a8fc17f076de878684
+    created: 1774960314350
+    modified: 1774960314350
+    isPrivate: false
