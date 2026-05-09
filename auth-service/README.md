@@ -99,6 +99,22 @@ La capa de negocio (`internal/service/`) implementa la lógica fundamental y des
   - `ValidateToken` — Verifica la firma y expiración del JWT (`jwt-go v5`), parsea los claims y valida que el usuario siga existiendo.
   - `GetUserById` — Capa passthrough para recuperar el perfil del usuario validado.
 
+## Pruebas (Tests)
+
+La capa de servicio está validada mediante **pruebas unitarias** (`auth_service_test.go`) que utilizan un mock en memoria del repositorio (`mockUserRepository`). 
+
+Estas pruebas verifican de forma automatizada:
+- El registro exitoso y el rechazo por emails duplicados.
+- El correcto cifrado (hashing) de la contraseña en el proceso de registro.
+- El inicio de sesión (Login) exitoso y la generación del JWT.
+- El rechazo ante credenciales inválidas (contraseña incorrecta).
+- La validación exitosa de un token emitido y el rechazo de tokens adulterados o vencidos.
+
+Para ejecutar los tests, utiliza el comando estándar de Go:
+```bash
+go test -v ./internal/service/...
+```
+
 ## Estado de Implementación
 
 - [x] Contrato Protobuf (`auth.proto`) y código generado.
