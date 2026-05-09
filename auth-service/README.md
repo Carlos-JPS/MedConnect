@@ -47,73 +47,51 @@ CREATE TABLE users (
 ```
 auth-service/
 ├── cmd/auth-service/          # Punto de entrada (main.go) ✅
-│   └── main.go
+│   └── main.go                # Inyección de dependencias y servidor gRPC
 ├── internal/
-│   ├── config/                # Carga de variables de entorno — pendiente
 │   ├── service/               # Lógica de negocio (bcrypt, JWT) ✅
-│   │   └── auth_service.go    # Implementación de hashing, verificación de clave y emisión de JWT
+│   │   └── auth_service.go    # Hashing, verificación de clave y emisión de JWT
 │   ├── repository/postgres/   # Queries SQL contra PostgreSQL ✅
 │   │   ├── models.go          # Struct User y constantes de roles
-│   │   └── repository.go     # CreateUser, GetUserByEmail, GetUserById
+│   │   └── repository.go      # CreateUser, GetUserByEmail, GetUserById
 │   └── transport/grpc/        # Servidor gRPC (handler) ✅
-│       └── handler.go         # Mapeo de pb a capa service y traducción de códigos de error gRPC
-├── migrations/
-│   ├── 000001_create_users_table.up.sql
-│   └── 000001_create_users_table.down.sql
-├── pb/
-│   ├── auth.proto             # Contrato Protobuf
-│   ├── auth.pb.go             # Código generado (mensajes)
-│   └── auth_grpc.pb.go        # Código generado (stubs gRPC)
-├── go.mod
-└── README.md
+│       └── handler.go         # Mapeo de pb a service y códigos de error gRPC
+├── migrations/                # Scripts SQL de base de datos
+├── pb/                        # Contratos Protobuf y código generado
+├── go.mod                     # Dependencias de Go
+└── README.md                  # Documentación del servicio
 ```
 
 ## Variables de Entorno
 
 | Variable | Descripción | Ejemplo |
 |---|---|---|
-| `AUTH_SERVICE_HOST` | Host de escucha gRPC | `0.0.0.0` |
 | `AUTH_SERVICE_PORT` | Puerto gRPC | `50051` |
 | `AUTH_DB_DSN` | DSN de conexión a PostgreSQL | `postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable` |
 | `JWT_SECRET` | Clave secreta para firmar tokens JWT | `mi-clave-secreta-segura` |
 
-## Capa Repository
+## Integración con API Gateway
 
-La capa de persistencia (`internal/repository/postgres/`) implementa el acceso directo a PostgreSQL:
+El servicio está integrado en el **API Gateway** unificado de MedConnect. Las peticiones REST externas se traducen automáticamente a llamadas gRPC hacia este servicio.
 
-- **`models.go`**: Define el struct `User` (con campos `ID`, `Email`, `PasswordHash`, `FullName`, `Role`, `CreatedAt`, `IsActive`) y las constantes de rol (`ADMIN`, `DOCTOR`, `PATIENT`).
-- **`repository.go`**: Implementa 3 métodos:
-  - `CreateUser(ctx, user)` — Inserta un usuario; detecta emails duplicados devolviendo `ErrEmailAlreadyExists`.
-  - `GetUserByEmail(ctx, email)` — Busca por email; devuelve `ErrUserNotFound` si no existe.
-  - `GetUserById(ctx, id)` — Busca por UUID; devuelve `ErrUserNotFound` si no existe.
+### Endpoints REST (vía Gateway)
 
-> **Resiliencia:** Cada query usa `context.WithTimeout` de 5 segundos para evitar bloqueos con la base de datos. Los errores de constraint (`UNIQUE` en email) se traducen a errores de dominio legibles.
+- **Registro**: `POST http://localhost:8080/auth/register`
+- **Login**: `POST http://localhost:8080/auth/login`
 
-## Capa Service
+## Pruebas
 
-La capa de negocio (`internal/service/`) implementa la lógica fundamental y desacopla la persistencia usando la interfaz `UserRepository`:
-
-- **`auth_service.go`**: Expone la interfaz `AuthService` e implementa:
-  - `RegisterUser` — Hashea la contraseña usando `bcrypt` (DefaultCost) e invoca la creación del usuario en el repositorio.
-  - `Login` — Recupera el hash por email, lo compara con `bcrypt.CompareHashAndPassword` y, si es correcto, emite un token JWT firmado con `HS256` y válido por 24 horas.
-  - `ValidateToken` — Verifica la firma y expiración del JWT (`jwt-go v5`), parsea los claims y valida que el usuario siga existiendo.
-  - `GetUserById` — Capa passthrough para recuperar el perfil del usuario validado.
-
-## Pruebas (Tests)
-
-La capa de servicio está validada mediante **pruebas unitarias** (`auth_service_test.go`) que utilizan un mock en memoria del repositorio (`mockUserRepository`). 
-
-Estas pruebas verifican de forma automatizada:
-- El registro exitoso y el rechazo por emails duplicados.
-- El correcto cifrado (hashing) de la contraseña en el proceso de registro.
-- El inicio de sesión (Login) exitoso y la generación del JWT.
-- El rechazo ante credenciales inválidas (contraseña incorrecta).
-- La validación exitosa de un token emitido y el rechazo de tokens adulterados o vencidos.
-
-Para ejecutar los tests, utiliza el comando estándar de Go:
+### Pruebas Unitarias
+Ejecuta la lógica de negocio y validación de tokens en memoria:
 ```bash
 go test -v ./internal/service/...
 ```
+
+### Pruebas Funcionales (Insomnia)
+Usa el archivo `Insomnia_2024-XX-XX.yaml` en la raíz del repositorio para probar el flujo completo:
+1. Asegúrate de que el sistema esté arriba: `docker compose up --build -d`
+2. Usa la carpeta **Authentication** en Insomnia.
+3. El login devolverá un `access_token` que podrás usar para otros servicios protegidos.
 
 ## Estado de Implementación
 
@@ -123,5 +101,6 @@ go test -v ./internal/service/...
 - [x] Capa service (lógica de negocio, bcrypt, JWT).
 - [x] Capa transport (servidor gRPC).
 - [x] Punto de entrada (`cmd/auth-service/main.go`).
-- [ ] Dockerfile.
-- [ ] Integración con Docker Compose y API Gateway.
+- [x] Dockerfile y despliegue en contenedores.
+- [x] Integración con API Gateway y rutas REST.
+- [x] Comentarios en español en todo el código fuente.

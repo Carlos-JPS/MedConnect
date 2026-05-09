@@ -10,25 +10,30 @@ import (
 	"github.com/lib/pq"
 )
 
+// Errores comunes de repositorio
 var (
-	ErrUserNotFound       = errors.New("user not found")
-	ErrEmailAlreadyExists = errors.New("email already exists")
+	ErrUserNotFound       = errors.New("usuario no encontrado")
+	ErrEmailAlreadyExists = errors.New("el correo electrónico ya existe")
 )
 
+// Repository maneja las operaciones de persistencia en PostgreSQL para usuarios
 type Repository struct {
 	db *sql.DB
 }
 
+// NewRepository crea una nueva instancia del repositorio
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// CreateUser inserta un nuevo usuario en la base de datos
 func (r *Repository) CreateUser(ctx context.Context, user *User) error {
 	query := `
 		INSERT INTO users (id, email, password_hash, full_name, role, created_at, is_active)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 	
+	// Timeout de 5 segundos para la operación
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -45,6 +50,7 @@ func (r *Repository) CreateUser(ctx context.Context, user *User) error {
 	)
 
 	if err != nil {
+		// Verificar si el error es por violación de unicidad (email duplicado)
 		if isUniqueViolation(err) {
 			return ErrEmailAlreadyExists
 		}
@@ -54,6 +60,7 @@ func (r *Repository) CreateUser(ctx context.Context, user *User) error {
 	return nil
 }
 
+// GetUserByEmail busca un usuario por su dirección de correo electrónico
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
 		SELECT id, email, password_hash, full_name, role, created_at, is_active
@@ -77,6 +84,7 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, e
 	)
 
 	if err != nil {
+		// Manejar el caso donde no se encuentra ninguna fila
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
@@ -86,6 +94,7 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, e
 	return &u, nil
 }
 
+// GetUserById busca un usuario por su identificador único (UUID)
 func (r *Repository) GetUserById(ctx context.Context, id uuid.UUID) (*User, error) {
 	query := `
 		SELECT id, email, password_hash, full_name, role, created_at, is_active
@@ -118,6 +127,7 @@ func (r *Repository) GetUserById(ctx context.Context, id uuid.UUID) (*User, erro
 	return &u, nil
 }
 
+// isUniqueViolation verifica si un error de Postgres es una violación de unicidad (código 23505)
 func isUniqueViolation(err error) bool {
 	pqErr, ok := err.(*pq.Error)
 	if ok && pqErr.Code == "23505" {

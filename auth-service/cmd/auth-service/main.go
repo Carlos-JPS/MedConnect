@@ -16,52 +16,57 @@ import (
 )
 
 func main() {
-	// Read configuration
+	// 1. Carga de configuración desde variables de entorno
 	dbDSN := os.Getenv("AUTH_DB_DSN")
 	if dbDSN == "" {
-		log.Fatal("AUTH_DB_DSN environment variable is not set")
+		log.Fatal("La variable de entorno AUTH_DB_DSN no está configurada")
 	}
 
 	port := os.Getenv("AUTH_SERVICE_PORT")
 	if port == "" {
-		port = "50051" // default port
+		port = "50051" // Puerto por defecto para gRPC
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET environment variable is not set")
+		log.Fatal("La variable de entorno JWT_SECRET no está configurada")
 	}
 
-	// Connect to database
+	// 2. Conexión a la base de datos PostgreSQL
 	db, err := sql.Open("postgres", dbDSN)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("Error al abrir la conexión a la base de datos: %v", err)
 	}
 	defer db.Close()
 
+	// Verificar que la base de datos sea accesible
 	if err := db.Ping(); err != nil {
-		log.Fatalf("Failed to ping database: %v", err)
+		log.Fatalf("No se pudo conectar a la base de datos (Ping): %v", err)
 	}
 
-	// Initialize layers
+	// 3. Inicialización de las capas de la aplicación (Inyección de Dependencias)
+	// Repositorio: Acceso a datos
 	repo := postgres.NewRepository(db)
+	// Servicio: Lógica de negocio (necesita el repositorio y la clave para JWT)
 	svc := service.NewAuthService(repo, jwtSecret)
+	// Handler: Capa de transporte gRPC
 	handler := transport.NewAuthHandler(svc)
 
-	// Start gRPC server
+	// 4. Configuración del servidor gRPC
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
-		log.Fatalf("Failed to listen on port %s: %v", port, err)
+		log.Fatalf("Error al escuchar en el puerto %s: %v", port, err)
 	}
 
 	grpcServer := grpc.NewServer()
+	// Registrar el servicio de autenticación en el servidor gRPC
 	pb.RegisterAuthServiceServer(grpcServer, handler)
 	
-	// Register reflection service on gRPC server to allow tools like grpcurl/insomnia to inspect the server
+	// Habilitar Reflection para que herramientas como grpcurl puedan inspeccionar el servidor
 	reflection.Register(grpcServer)
 
-	log.Printf("Starting gRPC server on port %s", port)
+	log.Printf("Iniciando servidor gRPC en el puerto %s", port)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve gRPC: %v", err)
+		log.Fatalf("Error al ejecutar el servidor gRPC: %v", err)
 	}
 }

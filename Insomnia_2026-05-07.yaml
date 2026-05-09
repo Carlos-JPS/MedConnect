@@ -7,6 +7,72 @@ meta:
   modified: 1778128101262
   description: "Coleccion para probar MedConnect por API Gateway"
 collection:
+  - name: Authentication
+    meta:
+      id: fld_auth_medconnect
+      created: 1778130000000
+      modified: 1778130000000
+      sortKey: -1778130000000
+      description: "Registro e inicio de sesión"
+    children:
+      - url: "{{ _.base_url }}/auth/register"
+        name: Register User
+        meta:
+          id: req_auth_register
+          created: 1778130001000
+          modified: 1778130001000
+          isPrivate: false
+          description: "Registra un nuevo usuario en el sistema."
+          sortKey: -1778130001000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "email": "paciente@test.com",
+              "password": "password123",
+              "full_name": "Juan Perez",
+              "role": "PATIENT"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.base_url }}/auth/login"
+        name: Login User
+        meta:
+          id: req_auth_login
+          created: 1778130002000
+          modified: 1778130002000
+          isPrivate: false
+          description: "Inicia sesión y obtiene el JWT."
+          sortKey: -1778130002000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "email": "paciente@test.com",
+              "password": "password123"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
   - name: Bookings
     meta:
       id: fld_bookings_medconnect

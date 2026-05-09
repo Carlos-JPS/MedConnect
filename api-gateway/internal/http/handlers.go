@@ -10,6 +10,7 @@ import (
 	"time"
 
 	availabilitypb "github.com/Carlos-JPS/medconnect/availability-service/pb"
+	authpb "github.com/MedConnect/auth-service/pb"
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc/codes"
@@ -42,18 +43,30 @@ type AvailabilityClient interface {
 	ReleaseHeldSlot(ctx context.Context, req *availabilitypb.ReleaseHeldSlotRequest) (*availabilitypb.ReleaseHeldSlotResponse, error)
 }
 
+type AuthClient interface {
+	RegisterUser(ctx context.Context, req *authpb.RegisterUserRequest) (*authpb.RegisterUserResponse, error)
+	Login(ctx context.Context, req *authpb.LoginRequest) (*authpb.LoginResponse, error)
+	ValidateToken(ctx context.Context, req *authpb.ValidateTokenRequest) (*authpb.ValidateTokenResponse, error)
+	GetUserById(ctx context.Context, req *authpb.GetUserByIdRequest) (*authpb.GetUserByIdResponse, error)
+}
+
 type Handler struct {
 	booking      BookingClient
 	payment      PaymentClient
 	availability AvailabilityClient
+	auth         AuthClient
 }
 
-func NewHandler(booking BookingClient, payment PaymentClient, availability AvailabilityClient) *Handler {
-	return &Handler{booking: booking, payment: payment, availability: availability}
+func NewHandler(booking BookingClient, payment PaymentClient, availability AvailabilityClient, auth AuthClient) *Handler {
+	return &Handler{booking: booking, payment: payment, availability: availability, auth: auth}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/register":
+		h.registerUser(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/login":
+		h.loginUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/bookings":
 		h.createBooking(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/bookings":
@@ -850,4 +863,84 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+// ── Auth handlers ──────────────────────────────────────────────
+
+type registerUserRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"full_name"`
+	Role     string `json:"role"`
+}
+
+func (h *Handler) registerUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthClient(w) {
+		return
+	}
+
+	var req registerUserRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+
+	resp, err := h.auth.RegisterUser(r.Context(), &authpb.RegisterUserRequest{
+		Email:    req.Email,
+		Password: req.Password,
+		FullName: req.FullName,
+		Role:     req.Role,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"user_id":    resp.GetUserId(),
+		"role":       resp.GetRole(),
+		"is_active":  resp.GetIsActive(),
+		"created_at": timestampToJSON(resp.GetCreatedAt()),
+	})
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuthClient(w) {
+		return
+	}
+
+	var req loginRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+
+	resp, err := h.auth.Login(r.Context(), &authpb.LoginRequest{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": resp.GetAccessToken(),
+		"user_id":      resp.GetUserId(),
+		"role":         resp.GetRole(),
+		"expires_at":   timestampToJSON(resp.GetExpiresAt()),
+	})
+}
+
+func (h *Handler) requireAuthClient(w http.ResponseWriter) bool {
+	if h.auth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth-service no configurado")
+		return false
+	}
+	return true
 }

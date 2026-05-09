@@ -10,12 +10,14 @@ services:
       BOOKING_SERVICE_TARGET: ${BOOKING_SERVICE_TARGET:-booking-service:50051}
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
+      AUTH_SERVICE_TARGET: ${AUTH_SERVICE_TARGET:-auth-service:50051}
     ports:
       - "${API_GATEWAY_PORT:-8080}:${API_GATEWAY_PORT:-8080}"
     depends_on:
       - booking-service
       - payment-service
       - availability-service
+      - auth-service
     networks:
       - medconnect_internal
 
@@ -121,14 +123,14 @@ services:
     image: postgres:15
     container_name: availability-db
     environment:
-      POSTGRES_USER: ${AVAILABILITY_DB_USER}
-      POSTGRES_PASSWORD: ${AVAILABILITY_DB_PASSWORD}
-      POSTGRES_DB: ${AVAILABILITY_DB_NAME}
+      POSTGRES_USER: ${AVAILABILITY_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${AVAILABILITY_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${AVAILABILITY_DB_NAME:-availability_db}
     volumes:
       - availability-db-data:/var/lib/postgresql/data
       - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER} -d ${AVAILABILITY_DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER:-postgres} -d ${AVAILABILITY_DB_NAME:-availability_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
