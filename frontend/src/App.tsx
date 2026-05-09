@@ -515,6 +515,8 @@ function BookingCard({
 }) {
   const isConfirming = loading === `confirm-${booking.booking_id}`;
   const isCancelling = loading === `cancel-${booking.booking_id}`;
+  const canConfirm = booking.status === "PENDING_PAYMENT";
+  const canCancel = booking.status === "PENDING_PAYMENT" || booking.status === "CONFIRMED";
 
   return (
     <article className="booking-card">
@@ -544,7 +546,7 @@ function BookingCard({
           type="button"
           onClick={() => onConfirm(booking.booking_id)}
           aria-label={`Confirmar ${booking.booking_id}`}
-          disabled={isConfirming || isCancelling}
+          disabled={!canConfirm || isConfirming || isCancelling}
         >
           {isConfirming ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
           Confirmar
@@ -554,7 +556,7 @@ function BookingCard({
           type="button"
           onClick={() => onCancel(booking.booking_id)}
           aria-label={`Cancelar ${booking.booking_id}`}
-          disabled={isConfirming || isCancelling}
+          disabled={!canCancel || isConfirming || isCancelling}
         >
           {isCancelling ? <Loader2 className="spin" size={16} /> : <XCircle size={16} />}
           Cancelar

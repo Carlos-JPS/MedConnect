@@ -110,6 +110,8 @@ describe("App", () => {
       await user.click(screen.getByRole("button", { name: /cancelar booking-1/i }));
     });
     expect(await screen.findByText(/reserva cancelada/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /confirmar booking-1/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /cancelar booking-1/i })).toBeDisabled();
 
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
