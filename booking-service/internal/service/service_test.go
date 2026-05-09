@@ -86,16 +86,24 @@ func (c *fakeAvailabilityClient) ConfirmSlotBooking(_ context.Context, input Con
 }
 
 type fakePaymentClient struct {
-	status PaymentStatus
-	err    error
-	id     string
-	calls  int
+	status    PaymentStatus
+	bookingID string
+	err       error
+	id        string
+	calls     int
 }
 
-func (c *fakePaymentClient) GetPaymentStatus(_ context.Context, paymentID string) (PaymentStatus, error) {
+func (c *fakePaymentClient) GetPayment(_ context.Context, paymentID string) (PaymentDetails, error) {
 	c.calls++
 	c.id = paymentID
-	return c.status, c.err
+	if c.err != nil {
+		return PaymentDetails{}, c.err
+	}
+	return PaymentDetails{
+		PaymentID: paymentID,
+		BookingID: c.bookingID,
+		Status:    c.status,
+	}, nil
 }
 
 func TestCreateBookingPersistsPendingAppointmentWithCreatedEvent(t *testing.T) {
@@ -207,7 +215,7 @@ func TestConfirmBookingValidatesPaymentAndConfirmsSlot(t *testing.T) {
 		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusPendingPayment},
 	}
 	availability := &fakeAvailabilityClient{}
-	payment := &fakePaymentClient{status: PaymentStatusApproved}
+	payment := &fakePaymentClient{status: PaymentStatusApproved, bookingID: "booking-1"}
 	svc := NewBookingService(
 		repo,
 		WithClock(func() time.Time { return now }),
@@ -247,7 +255,7 @@ func TestConfirmBookingRejectsUnapprovedPaymentWithoutUpdatingAppointment(t *tes
 	repo := &fakeRepository{
 		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusPendingPayment},
 	}
-	payment := &fakePaymentClient{status: PaymentStatusRejected}
+	payment := &fakePaymentClient{status: PaymentStatusRejected, bookingID: "booking-1"}
 	svc := NewBookingService(repo, WithPaymentClient(payment))
 
 	_, err := svc.ConfirmBooking(context.Background(), ConfirmBookingInput{
@@ -260,6 +268,62 @@ func TestConfirmBookingRejectsUnapprovedPaymentWithoutUpdatingAppointment(t *tes
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("expected appointment not to be updated after rejected payment")
+	}
+}
+
+func TestConfirmBookingRejectsPaymentForDifferentBooking(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusPendingPayment},
+	}
+	availability := &fakeAvailabilityClient{}
+	payment := &fakePaymentClient{status: PaymentStatusApproved, bookingID: "booking-2"}
+	svc := NewBookingService(
+		repo,
+		WithAvailabilityClient(availability),
+		WithPaymentClient(payment),
+	)
+
+	_, err := svc.ConfirmBooking(context.Background(), ConfirmBookingInput{
+		BookingID: "booking-1",
+		PaymentID: "payment-1",
+	})
+
+	if err == nil {
+		t.Fatal("expected mismatched payment error")
+	}
+	if availability.confirmCalls != 0 {
+		t.Fatalf("expected no slot confirmation for mismatched payment")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected appointment not to be updated for mismatched payment")
+	}
+}
+
+func TestConfirmBookingRejectsPaymentWithoutBookingReference(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusPendingPayment},
+	}
+	availability := &fakeAvailabilityClient{}
+	payment := &fakePaymentClient{status: PaymentStatusApproved}
+	svc := NewBookingService(
+		repo,
+		WithAvailabilityClient(availability),
+		WithPaymentClient(payment),
+	)
+
+	_, err := svc.ConfirmBooking(context.Background(), ConfirmBookingInput{
+		BookingID: "booking-1",
+		PaymentID: "payment-1",
+	})
+
+	if err == nil {
+		t.Fatal("expected payment booking reference error")
+	}
+	if availability.confirmCalls != 0 {
+		t.Fatalf("expected no slot confirmation for payment without booking reference")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected appointment not to be updated for payment without booking reference")
 	}
 }
 
@@ -300,6 +364,26 @@ func TestCancelBookingReturnsExistingBookingWhenAlreadyCancelled(t *testing.T) {
 	}
 	if repo.updateCalls != 0 {
 		t.Fatalf("expected no repository update for already cancelled booking")
+	}
+}
+
+func TestCancelBookingRejectsConfirmedBookingWithoutExternalCalls(t *testing.T) {
+	repo := &fakeRepository{
+		booking: Booking{BookingID: "booking-1", SlotID: "slot-1", Status: StatusConfirmed},
+	}
+	availability := &fakeAvailabilityClient{}
+	svc := NewBookingService(repo, WithAvailabilityClient(availability))
+
+	_, err := svc.CancelBooking(context.Background(), CancelBookingInput{BookingID: "booking-1"})
+
+	if err == nil {
+		t.Fatal("expected invalid state error")
+	}
+	if availability.releaseCalls != 0 {
+		t.Fatalf("expected no availability release for confirmed booking cancellation")
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("expected no repository update for confirmed booking cancellation")
 	}
 }
 

@@ -36,7 +36,6 @@ type DemoSlot = {
 };
 
 const demoPatientId = "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235";
-const demoPaymentId = "b7d8f1b0-af07-4e57-8859-e929aa77e2fc";
 
 const demoSlots: DemoSlot[] = [
   {
@@ -90,7 +89,7 @@ function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [detail, setDetail] = useState<BookingDetail | null>(null);
   const [lookupBookingId, setLookupBookingId] = useState("");
-  const [paymentId, setPaymentId] = useState(demoPaymentId);
+  const [paymentId, setPaymentId] = useState("");
   const [cancelReason, setCancelReason] = useState("Paciente solicita reagendar.");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -145,8 +144,13 @@ function App() {
   }
 
   async function confirmBooking(bookingId: string) {
+    if (!paymentId.trim()) {
+      setError("Ingresa un payment_id asociado a esta reserva antes de confirmar.");
+      return;
+    }
+
     await run(`confirm-${bookingId}`, async () => {
-      const result = await api.confirmBooking(bookingId, paymentId);
+      const result = await api.confirmBooking(bookingId, paymentId.trim());
       applyActionResult(result);
       setMessage(`Reserva confirmada: ${bookingId}.`);
     });
@@ -516,7 +520,7 @@ function BookingCard({
   const isConfirming = loading === `confirm-${booking.booking_id}`;
   const isCancelling = loading === `cancel-${booking.booking_id}`;
   const canConfirm = booking.status === "PENDING_PAYMENT";
-  const canCancel = booking.status === "PENDING_PAYMENT" || booking.status === "CONFIRMED";
+  const canCancel = booking.status === "PENDING_PAYMENT";
 
   return (
     <article className="booking-card">

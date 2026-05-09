@@ -3,10 +3,13 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/MedConnect/booking-service/internal/service"
 	pb "github.com/MedConnect/booking-service/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -28,7 +31,7 @@ func (s *Server) CreateBooking(ctx context.Context, req *pb.CreateBookingRequest
 		Notes:     req.GetNotes(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapServiceError(err)
 	}
 
 	return &pb.CreateBookingResponse{
@@ -44,7 +47,7 @@ func (s *Server) CancelBooking(ctx context.Context, req *pb.CancelBookingRequest
 		Reason:    req.GetReason(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapServiceError(err)
 	}
 
 	return &pb.CancelBookingResponse{
@@ -57,7 +60,7 @@ func (s *Server) CancelBooking(ctx context.Context, req *pb.CancelBookingRequest
 func (s *Server) GetBooking(ctx context.Context, req *pb.GetBookingRequest) (*pb.GetBookingResponse, error) {
 	details, err := s.bookingService.GetBooking(ctx, req.GetBookingId())
 	if err != nil {
-		return nil, err
+		return nil, mapServiceError(err)
 	}
 
 	return &pb.GetBookingResponse{
@@ -72,7 +75,7 @@ func (s *Server) ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingReque
 		PaymentID: req.GetPaymentId(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapServiceError(err)
 	}
 
 	return &pb.ConfirmBookingResponse{
@@ -85,7 +88,7 @@ func (s *Server) ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingReque
 func (s *Server) ListBookingsByPatient(ctx context.Context, req *pb.ListBookingsByPatientRequest) (*pb.ListBookingsByPatientResponse, error) {
 	bookings, err := s.bookingService.ListBookingsByPatient(ctx, req.GetPatientId(), mapPBStatus(req.GetStatus()))
 	if err != nil {
-		return nil, err
+		return nil, mapServiceError(err)
 	}
 
 	return &pb.ListBookingsByPatientResponse{
@@ -205,4 +208,15 @@ func timestampPtr(value *time.Time) *timestamppb.Timestamp {
 		return nil
 	}
 	return timestamppb.New(*value)
+}
+
+func mapServiceError(err error) error {
+	switch {
+	case errors.Is(err, service.ErrInvalidBookingState):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, service.ErrExternalDependency):
+		return status.Error(codes.Unavailable, err.Error())
+	default:
+		return err
+	}
 }

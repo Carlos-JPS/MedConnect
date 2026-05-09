@@ -2,16 +2,20 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/MedConnect/booking-service/internal/service"
 	pb "github.com/MedConnect/booking-service/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type fakeBookingService struct {
-	booking service.Booking
-	lastID  string
+	booking   service.Booking
+	cancelErr error
+	lastID    string
 }
 
 func (f *fakeBookingService) CreateBooking(_ context.Context, input service.CreateBookingInput) (service.Booking, error) {
@@ -24,6 +28,9 @@ func (f *fakeBookingService) CreateBooking(_ context.Context, input service.Crea
 }
 
 func (f *fakeBookingService) CancelBooking(_ context.Context, input service.CancelBookingInput) (service.Booking, error) {
+	if f.cancelErr != nil {
+		return service.Booking{}, f.cancelErr
+	}
 	return service.Booking{BookingID: input.BookingID, Status: service.StatusCancelled}, nil
 }
 
@@ -96,5 +103,18 @@ func TestGetBookingDelegatesToServiceAndMapsResponse(t *testing.T) {
 	}
 	if len(resp.GetEvents()) != 1 {
 		t.Fatalf("expected one event, got %d", len(resp.GetEvents()))
+	}
+}
+
+func TestCancelBookingMapsInvalidStateToFailedPrecondition(t *testing.T) {
+	svc := &fakeBookingService{
+		cancelErr: fmt.Errorf("%w: no se puede cancelar una reserva CONFIRMED", service.ErrInvalidBookingState),
+	}
+	server := NewServer(svc)
+
+	_, err := server.CancelBooking(context.Background(), &pb.CancelBookingRequest{BookingId: "booking-1"})
+
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %s: %v", status.Code(err), err)
 	}
 }
