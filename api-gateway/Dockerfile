@@ -4,6 +4,8 @@ WORKDIR /workspace
 
 COPY booking-service ./booking-service
 COPY payment-service ./payment-service
+COPY availability-service ./availability-service
+COPY auth-service ./auth-service
 COPY api-gateway ./api-gateway
 
 WORKDIR /workspace/api-gateway

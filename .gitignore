@@ -27,6 +27,7 @@ dist/
 .env.prod
 .env.dev
 *.local
+Rubrica_Tecnica_Microservicios.md
 
 # Archivos de IDE y sistema operativo
 .idea/
@@ -35,6 +36,12 @@ dist/
 *~
 .DS_Store
 Thumbs.db
+Rubrica_Tecnica_Microservicios.md
 
 node_modules/
-dist/
+dist/auth-service-bin
+availability-service/availability-service
+booking-service/booking-service
+payment-service/payment-service
+api-gateway/api-gateway
+auth-service/auth-service
