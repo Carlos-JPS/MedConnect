@@ -1,179 +1,291 @@
 # MedConnect
 
-**MedConnect** es una plataforma distribuida de gestión de citas médicas diseñada para pacientes y clínicas. Permite a los usuarios buscar médicos, visualizar horarios disponibles, bloquear horas y procesar pagos. La arquitectura está construida sobre un ecosistema de **microservicios independientes**, lo que garantiza alta disponibilidad, tolerancia a fallos y escalabilidad horizontal, separando responsabilidades operativas como Autenticación, Reservas, Disponibilidad de agendas y Transacciones de pago.
-
-## Arquitectura Actual
-
-La arquitectura implementa el patrón **API Gateway (BFF - Backend For Frontend)**. Los clientes externos se comunican exclusivamente vía HTTP/REST con el API Gateway. Este actúa como traductor y enrutador, comunicándose con los microservicios internos utilizando **gRPC**. La red interna está aislada en Docker y cada microservicio posee su propia instancia de base de datos PostgreSQL independiente (Patrón Database-per-service).
-
-- **api-gateway**: Única entrada HTTP externa. Expone endpoints REST de autenticación, disponibilidad, reservas y pagos, traduciéndolos a gRPC.
-- **auth-service**: Servicio gRPC. Maneja registro, login y validación de tokens JWT.
-- **availability-service**: Servicio gRPC. Maneja las agendas médicas y la disponibilidad de slots.
-- **booking-service**: Servicio gRPC. Persiste intenciones de citas y orquesta con disponibilidad y pagos.
-- **payment-service**: Servicio gRPC. Persiste pagos y transacciones.
-- **Bases de datos**: `auth_db`, `availability-db`, `booking_db`, `payments_db` (Instancias PostgreSQL independientes).
-
-*(Nota: El desarrollo de la interfaz de usuario / Frontend está marcado como To-Do y se conectará directamente a este Gateway en el futuro).*
-
-## Casos de Uso y Flujos de Comunicación
-
-1. **Búsqueda de disponibilidad (Lectura)**
-   - **Usuario:** El paciente busca en la plataforma las horas disponibles de un médico específico.
-   - **Flujo Técnico:** El cliente envía una petición REST (`GET /availability/doctors/.../agenda`) al API Gateway. El Gateway traduce la petición a gRPC hacia el `availability-service`. Este servicio consulta su base de datos aislada (`availability-db`) y retorna los slots al Gateway, que responde con JSON al cliente. Ningún otro servicio interviene.
-
-2. **Bloqueo de Reserva (Escritura temporal)**
-   - **Usuario:** El paciente selecciona un bloque de tiempo y avanza al pago. El sistema retiene la hora temporalmente.
-   - **Flujo Técnico:** El API Gateway recibe un `POST /bookings` y llama vía gRPC a `booking-service`. Antes de crear la reserva, `booking-service` llama gRPC a `availability-service` (`HoldSlot`) para cambiar el estado a "held" y evitar colisiones. Luego, `booking-service` guarda la reserva en `booking_db` con estado "pending".
-
-3. **Procesamiento de Pago**
-   - **Usuario:** El paciente ingresa sus datos y completa el pago de la consulta médica.
-   - **Flujo Técnico:** Petición REST al API Gateway que se rutea vía gRPC al `payment-service`. Este servicio valida la transacción, persiste en `payments_db` y retorna éxito o rechazo.
-
-4. **Confirmación Definitiva (Sincronización)**
-   - **Usuario:** Tras pagar, el paciente recibe la confirmación final de que su hora fue agendada exitosamente.
-   - **Flujo Técnico:** Tras un pago exitoso, se llama a confirmar la reserva (`POST /bookings/.../confirm`). `booking-service` valida con `payment-service`, actualiza su estado a "confirmed" en `booking_db` y realiza una llamada gRPC a `availability-service` (`ConfirmSlotBooking`) mutando el slot de "held" a "booked".
-
-## Decisiones Técnicas y Trade-offs
-
-- **Patrón Database-per-service (Bases de datos separadas)**
-  - *Justificación:* Garantiza bajo acoplamiento y aísla fallas. Si la BD de pagos cae, la búsqueda de horas médicas sigue funcionando perfectamente.
-  - *Trade-off:* Complica las transacciones distribuidas. Obliga a manejar consistencia eventual y compensaciones (ej: liberar un slot si el pago falla o expira).
-
-- **Comunicación interna mediante gRPC vs REST**
-  - *Justificación:* gRPC con Protobuf ofrece serialización binaria ultrarrápida, contratos estrictos y menor latencia para tráfico de máquina a máquina.
-  - *Trade-off:* Curva de aprendizaje más alta y pérdida de legibilidad humana directa de payloads en la red, requiriendo herramientas especiales para debug.
-
-- **Uso de API Gateway único**
-  - *Justificación:* Oculta la complejidad de los microservicios, unifica la exposición externa, y traduce protocolos automáticamente.
-  - *Trade-off:* Es un Single Point of Failure (SPOF) y añade latencia marginal por el salto de red adicional.
+**MedConnect** es una plataforma distribuida de gestión de citas médicas diseñada para pacientes y clínicas. Permite a los usuarios buscar médicos, visualizar horarios disponibles, bloquear horas y procesar pagos. El sistema está construido sobre un ecosistema de microservicios independientes que se comunican internamente por gRPC y exponen una interfaz unificada al exterior a través de un API Gateway REST. Cada servicio posee su propia base de datos PostgreSQL aislada.
 
 ## Guía Operacional: Levantar el Sistema
 
 El proyecto está completamente Dockerizado. No es necesario instalar Go localmente.
 
-### 1. Configuración Inicial
-Copia el archivo de entorno base:
+### Requisitos
+
+- Docker
+- Docker Compose V2
+
+### 1. Variables de Entorno
+
+Copia el archivo de entorno base. Los valores por defecto son funcionales para desarrollo local y no requieren modificación:
+
 ```bash
 cp .env.example .env
 ```
-*(Los valores por defecto de `.env.example` son completamente funcionales para el ambiente de desarrollo local).*
+
+Las variables principales que usa el sistema son:
+
+```env
+API_GATEWAY_HOST=0.0.0.0
+API_GATEWAY_PORT=8080
+API_GATEWAY_REQUEST_TIMEOUT=5s
+
+BOOKING_SERVICE_TARGET=booking-service:50051
+PAYMENT_SERVICE_TARGET=payment-service:50051
+AVAILABILITY_SERVICE_TARGET=availability-service:50051
+AUTH_SERVICE_TARGET=auth-service:50051
+
+BOOKING_DB_DSN=postgres://booking:booking_password@booking_db:5432/booking_db?sslmode=disable
+AVAILABILITY_DB_USER=postgres
+AVAILABILITY_DB_PASSWORD=postgres
+AVAILABILITY_DB_NAME=availability_db
+
+PAYMENTS_DB_USER=postgres
+PAYMENTS_DB_PASSWORD=postgres
+PAYMENTS_DB_NAME=payments_db
+
+AUTH_DB_USER=auth
+AUTH_DB_PASSWORD=auth_password
+AUTH_DB_NAME=auth_db
+JWT_SECRET=medconnect-jwt-secret-change-me
+```
 
 ### 2. Iniciar Servicios
-Levanta toda la infraestructura (Gateway, 4 Microservicios, 4 BDs):
+
 ```bash
 docker compose up -d --build
 ```
 
-- **Ver contenedores:** `docker compose ps`
-- **Ver logs:** `docker compose logs -f`
-- **Detener y borrar datos:** `docker compose down -v`
+Espera unos 15-20 segundos para que todas las bases de datos inicialicen antes de enviar peticiones.
 
-### 3. Puertos Expuestos al Host
-- **API Gateway (REST):** `http://localhost:8080`
-*(Los servicios gRPC y las BD operan de manera segura y privada solo en la red interna de Docker `medconnect_internal`).*
+```bash
+# Verificar que todos los contenedores estén en ejecución
+docker compose ps
 
-## Pruebas de Endpoints (API Gateway)
+# Ver logs en tiempo real
+docker compose logs -f
 
-La forma recomendada de probar el sistema es utilizando la colección de Insomnia.
+# Detener y eliminar datos
+docker compose down -v
+```
 
-### Pruebas con Insomnia (Recomendado)
-En la raíz del repositorio se encuentra el archivo `Insomnia_2026-05-07.yaml`.
-1. Importa este archivo en tu cliente **Insomnia**.
-2. Contiene carpetas ordenadas para **Auth**, **Availability**, **Bookings** y **Payments**.
-3. Todas las peticiones apuntan a `http://localhost:8080` (API Gateway).
+### 3. Punto de Acceso
+
+Una vez levantado, el API Gateway queda disponible en:
+
+```
+http://localhost:8080
+```
+
+Todos los servicios gRPC y bases de datos operan únicamente dentro de la red interna `medconnect_internal` y no son accesibles desde el host.
+
+## Pruebas con Insomnia
+
+El archivo `Insomnia_2026-05-07.yaml` en la raíz del repositorio contiene todas las peticiones listas para usar.
+
+### Paso 1: Importar la colección
+
+1. Abre Insomnia
+2. Ve a **File > Import**
+3. Selecciona el archivo `Insomnia_2026-05-07.yaml`
+4. La colección se carga con carpetas para **Auth**, **Availability**, **Bookings** y **Payments**
+
+### Paso 2: Configurar el entorno
+
+Insomnia no carga los valores de entorno automáticamente. Debes crearlos manualmente:
+
+1. En la colección importada, haz clic en el selector de entorno (arriba a la izquierda, junto al nombre de la colección)
+2. Selecciona **Manage Environments**
+3. Crea un nuevo entorno llamado `Local` y pega el siguiente JSON:
+
+```json
+{
+  "base_url": "http://localhost:8080",
+  "patient_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
+  "doctor_id": "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
+  "slot_id": "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
+  "booking_id": "",
+  "payment_id": "",
+  "payment_method_id": "method-demo"
+}
+```
+
+4. Guarda el entorno y selecciónalo como activo
+5. A medida que avances en el flujo, actualiza `booking_id` y `payment_id` con los valores que retorne cada petición
+
+### Paso 3: Flujo de prueba completo (Happy Path)
+
+Ejecuta las peticiones en este orden exacto en Insomnia. Cada paso depende del anterior.
 
 ---
 
-### Pruebas Manuales (cURL)
+**Paso 1: Registrar un usuario**
 
-<details>
-<summary>Ver comandos cURL para todos los endpoints</summary>
+`Auth / Register User`
 
-#### Autenticación
+```json
+{
+  "email": "paciente@test.com",
+  "password": "password123",
+  "full_name": "Juan Perez",
+  "role": "PATIENT"
+}
+```
 
-**Registro de Usuario**
+---
+
+**Paso 2: Iniciar sesión**
+
+`Auth / Login`
+
+```json
+{
+  "email": "paciente@test.com",
+  "password": "password123"
+}
+```
+
+---
+
+**Paso 3: Consultar disponibilidad**
+
+`Availability / Get Available Slots`
+
+Los datos de prueba se insertan automáticamente al levantar el sistema. Deberías ver 3 slots con estado `available` para las especialidades Cardiología, Traumatología y Medicina interna.
+
+---
+
+**Paso 4: Crear una reserva**
+
+`Bookings / Create Booking`
+
+```json
+{
+  "patient_id": "{{patient_id}}",
+  "doctor_id": "{{doctor_id}}",
+  "slot_id": "{{slot_id}}",
+  "notes": "Control de rutina"
+}
+```
+
+Copia el `booking_id` de la respuesta y actualízalo en el entorno de Insomnia.
+
+---
+
+**Paso 5: Crear un pago**
+
+`Payments / Create Payment`
+
+```json
+{
+  "booking_id": "{{booking_id}}",
+  "user_id": "{{patient_id}}",
+  "amount": 15000,
+  "currency": "CLP"
+}
+```
+
+Copia el `payment_id` de la respuesta y actualízalo en el entorno de Insomnia.
+
+---
+
+**Paso 6: Procesar el pago**
+
+`Payments / Process Payment`
+
+```json
+{
+  "payment_method_id": "{{payment_method_id}}"
+}
+```
+
+El pago debe quedar en estado `APPROVED` o `COMPLETED`.
+
+---
+
+**Paso 7: Confirmar la reserva**
+
+`Bookings / Confirm Booking`
+
+```json
+{
+  "payment_id": "{{payment_id}}"
+}
+```
+
+La reserva pasa a estado `CONFIRMED` y el slot en `availability-db` queda en `booked`.
+
+---
+
+**Paso 8: Verificar estado final**
+
+`Bookings / Get Booking`
+
+Verifica que la reserva muestre estado `CONFIRMED` y sus eventos de auditoría.
+
+---
+
+### Flujo alternativo: Cancelar una reserva
+
+Si en lugar de confirmar deseas probar la cancelación, después del Paso 5 ejecuta:
+
+`Bookings / Cancel Booking`
+
+```json
+{
+  "reason": "Paciente solicita reagendar"
+}
+```
+
+El slot vuelve a estado `available` en `availability-db` y la reserva queda en `CANCELLED`.
+
+## Pruebas con cURL (alternativa a Insomnia)
+
+Todos los endpoints son HTTP/REST y se acceden exclusivamente a través del API Gateway en `http://localhost:8080`. Los servicios gRPC internos no están expuestos al host, por lo que no se requiere `grpcurl`.
+
+Ejecuta los siguientes comandos en el mismo orden secuencial del Happy Path.
+
 ```bash
-curl -X POST http://localhost:8080/auth/register \
+# Paso 1: Registrar usuario
+curl -s -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "paciente@test.com",
-    "password": "password123",
-    "full_name": "Juan Perez",
-    "role": "PATIENT"
-  }'
-```
+  -d '{"email":"paciente@test.com","password":"password123","full_name":"Juan Perez","role":"PATIENT"}'
 
-**Inicio de Sesión**
-```bash
-curl -X POST http://localhost:8080/auth/login \
+# Paso 2: Iniciar sesión
+curl -s -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "paciente@test.com",
-    "password": "password123"
-  }'
-```
+  -d '{"email":"paciente@test.com","password":"password123"}'
 
-#### Booking & Availability
+# Paso 3: Consultar disponibilidad (los datos se insertan automáticamente al levantar el sistema)
+curl -s "http://localhost:8080/availability/slots?specialty=Cardiología&start_date=2026-01-01T00:00:00Z&end_date=2027-12-31T00:00:00Z"
 
-**Crear Reserva (Requiere Availability Service)**
-```bash
-curl -X POST http://localhost:8080/bookings \
+# Paso 4: Crear reserva (guarda el booking_id de la respuesta)
+curl -s -X POST http://localhost:8080/bookings \
   -H "Content-Type: application/json" \
-  -d '{
-    "patient_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
-    "doctor_id": "7e0d2ab1-164e-4a28-8b95-f24293dd0e91",
-    "slot_id": "0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21",
-    "notes": "Control creado desde demo"
-  }'
-```
+  -d '{"patient_id":"46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235","doctor_id":"7e0d2ab1-164e-4a28-8b95-f24293dd0e91","slot_id":"0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21","notes":"Control de rutina"}'
 
-**Listar Reservas de Paciente**
-```bash
-curl "http://localhost:8080/bookings?patient_id=46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235"
-```
-
-**Confirmar Reserva**
-```bash
-curl -X POST http://localhost:8080/bookings/{booking_id}/confirm \
+# Paso 5: Crear pago (reemplaza {BOOKING_ID} con el valor del paso anterior)
+curl -s -X POST http://localhost:8080/payments \
   -H "Content-Type: application/json" \
-  -d '{
-    "payment_id": "{payment_id}"
-  }'
-```
+  -d '{"booking_id":"{BOOKING_ID}","user_id":"46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235","amount":15000,"currency":"CLP"}'
 
-**Cancelar Reserva**
-```bash
-curl -X PATCH http://localhost:8080/bookings/{booking_id}/cancel \
+# Paso 6: Procesar pago (reemplaza {PAYMENT_ID} con el valor del paso anterior)
+curl -s -X POST http://localhost:8080/payments/{PAYMENT_ID}/process \
   -H "Content-Type: application/json" \
-  -d '{
-    "reason": "Paciente solicita reagendar"
-  }'
-```
+  -d '{"payment_method_id":"method-demo"}'
 
-#### Payments
-
-**Crear Pago**
-```bash
-curl -X POST http://localhost:8080/payments \
+# Paso 7: Confirmar reserva
+curl -s -X POST http://localhost:8080/bookings/{BOOKING_ID}/confirm \
   -H "Content-Type: application/json" \
-  -d '{
-    "booking_id": "{booking_id}",
-    "user_id": "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235",
-    "amount": 15000,
-    "currency": "CLP"
-  }'
+  -d '{"payment_id":"{PAYMENT_ID}"}'
+
+# Paso 8: Verificar estado final
+curl -s http://localhost:8080/bookings/{BOOKING_ID}
 ```
 
-**Procesar Pago**
+**Flujo alternativo: Cancelar reserva** (en lugar del Paso 8)
+
 ```bash
-curl -X POST http://localhost:8080/payments/{payment_id}/process \
+curl -s -X PATCH http://localhost:8080/bookings/{BOOKING_ID}/cancel \
   -H "Content-Type: application/json" \
-  -d '{
-    "payment_method_id": "method-demo"
-  }'
+  -d '{"reason":"Paciente solicita reagendar"}'
 ```
-
-</details>
 
 ## Estructura del Repositorio
 
@@ -189,5 +301,5 @@ MedConnect/
 ```
 
 ## Próximos Pasos (To-Do)
-- [ ] Construir e integrar la capa **Frontend** (React/Vite) para conectarse mediante HTTP REST al API Gateway.
-- [ ] Implementar middleware JWT completo en API Gateway.
+
+- [ ] Construir e integrar la capa **Frontend** para conectarse mediante HTTP REST al API Gateway.
