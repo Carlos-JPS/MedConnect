@@ -526,7 +526,7 @@ collection:
       sortKey: -1778130000000
       description: Registro e inicio de sesión
     children:
-      - url: http://localhost:8080/auth/register
+      - url: "{{ _.base_url }}/auth/register"
         name: Register User
         meta:
           id: req_7c577b34cdee468f949ccdbb6b6a1563
@@ -556,7 +556,7 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: http://localhost:8080/auth/login
+      - url: "{{ _.base_url }}/auth/login"
         name: Login User
         meta:
           id: req_d19a061dc4d5437f85b286b663dcb966
@@ -584,7 +584,7 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: http://localhost:8080/auth/validate
+      - url: "{{ _.base_url }}/auth/validate"
         name: Validar token
         meta:
           id: req_2e7773bd3dd74dd688f69e9854dd1ee0
@@ -611,7 +611,7 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: http://localhost:8080/auth/users/{247c8c55-b9b5-45e6-b03b-af6c900cf844}
+      - url: "{{ _.base_url }}/auth/users/247c8c55-b9b5-45e6-b03b-af6c900cf844"
         name: Get User By Id
         meta:
           id: req_1d36202ec21f4d1db7f4949ac57fc6d7
@@ -648,3 +648,11 @@ environments:
     created: 1774960314350
     modified: 1774960314350
     isPrivate: false
+  data:
+    base_url: http://localhost:8080
+    patient_id: 46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235
+    doctor_id: 7e0d2ab1-164e-4a28-8b95-f24293dd0e91
+    slot_id: 0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21
+    booking_id: ""
+    payment_id: ""
+    payment_method_id: method-demo

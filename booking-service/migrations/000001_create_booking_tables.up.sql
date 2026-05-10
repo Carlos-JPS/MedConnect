@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     id UUID PRIMARY KEY,
     patient_id UUID NOT NULL,
     doctor_id UUID NOT NULL,
-    slot_id UUID NOT NULL UNIQUE,
+    slot_id UUID NOT NULL,
     status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING_PAYMENT', 'CONFIRMED', 'CANCELLED', 'EXPIRED')),
     payment_id UUID NULL,
     confirmation_code VARCHAR(30) NULL,
@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE INDEX IF NOT EXISTS idx_appointments_patient_status
     ON appointments (patient_id, status, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_active_slot
+    ON appointments (slot_id)
+    WHERE status IN ('PENDING_PAYMENT', 'CONFIRMED');
 
 CREATE TABLE IF NOT EXISTS appointment_events (
     id UUID PRIMARY KEY,

@@ -10,6 +10,8 @@ import (
 
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -18,6 +20,7 @@ type fakeBookingClient struct {
 	getReq     *pb.GetBookingRequest
 	listReq    *pb.ListBookingsByPatientRequest
 	cancelReq  *pb.CancelBookingRequest
+	cancelErr  error
 	confirmReq *pb.ConfirmBookingRequest
 }
 
@@ -62,6 +65,9 @@ func (c *fakeBookingClient) ListBookingsByPatient(_ context.Context, req *pb.Lis
 
 func (c *fakeBookingClient) CancelBooking(_ context.Context, req *pb.CancelBookingRequest) (*pb.CancelBookingResponse, error) {
 	c.cancelReq = req
+	if c.cancelErr != nil {
+		return nil, c.cancelErr
+	}
 	return &pb.CancelBookingResponse{
 		BookingId: req.GetBookingId(),
 		Status:    pb.BookingStatus_BOOKING_STATUS_CANCELLED,
@@ -163,7 +169,7 @@ func (c *fakePaymentClient) RefundPayment(_ context.Context, req *paymentpb.Refu
 
 func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil)
+	handler := NewHandler(client, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/bookings", strings.NewReader(`{
 		"patient_id":"patient-1",
 		"doctor_id":"doctor-1",
@@ -187,7 +193,7 @@ func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 
 func TestGetBookingEndpointUsesPathID(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil)
+	handler := NewHandler(client, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/bookings/booking-1", nil)
 	rec := httptest.NewRecorder()
 
@@ -203,7 +209,7 @@ func TestGetBookingEndpointUsesPathID(t *testing.T) {
 
 func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil)
+	handler := NewHandler(client, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/bookings?patient_id=patient-1&status=PENDING_PAYMENT", nil)
 	rec := httptest.NewRecorder()
 
@@ -222,7 +228,7 @@ func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 
 func TestCancelBookingEndpointUsesPatchSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil)
+	handler := NewHandler(client, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
 	rec := httptest.NewRecorder()
 
@@ -239,9 +245,24 @@ func TestCancelBookingEndpointUsesPatchSubresource(t *testing.T) {
 	}
 }
 
+func TestCancelBookingEndpointMapsFailedPreconditionToConflict(t *testing.T) {
+	client := &fakeBookingClient{
+		cancelErr: status.Error(codes.FailedPrecondition, "estado de reserva invalido"),
+	}
+	handler := NewHandler(client, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil)
+	handler := NewHandler(client, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/bookings/booking-1/confirm", strings.NewReader(`{"payment_id":"payment-1"}`))
 	rec := httptest.NewRecorder()
 
@@ -261,7 +282,7 @@ func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	bookingClient := &fakeBookingClient{}
 	paymentClient := &fakePaymentClient{}
-	handler := NewHandler(bookingClient, paymentClient, nil)
+	handler := NewHandler(bookingClient, paymentClient, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/payments", strings.NewReader(`{
 		"booking_id":"booking-1",
 		"user_id":"patient-1",
@@ -286,7 +307,7 @@ func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
 func TestPaymentActionEndpointsUsePathIDs(t *testing.T) {
 	bookingClient := &fakeBookingClient{}
 	paymentClient := &fakePaymentClient{}
-	handler := NewHandler(bookingClient, paymentClient, nil)
+	handler := NewHandler(bookingClient, paymentClient, nil, nil)
 
 	cases := []struct {
 		name   string

@@ -44,4 +44,5 @@ availability-service/availability-service
 booking-service/booking-service
 payment-service/payment-service
 api-gateway/api-gateway
+api-gateway\api-gateway-bin
 auth-service/auth-service
