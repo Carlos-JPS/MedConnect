@@ -88,7 +88,7 @@ El archivo `Insomnia_2026-05-07.yaml` en la raíz del repositorio contiene todas
 
 ### Paso 2: Configurar el entorno
 
-Insomnia no carga los valores de entorno automáticamente. Debes crearlos manualmente:
+En algunos casos, Insomnia no carga los valores de entorno automáticamente, entonces, debes crearlos manualmente (continúa con el paso siguiente si no es así):
 
 1. En la colección importada, haz clic en el selector de entorno (arriba a la izquierda, junto al nombre de la colección)
 2. Selecciona **Manage Environments**
