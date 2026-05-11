@@ -1,0 +1,48 @@
+# Binarios generados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+server
+
+# Binarios de test, generados con `go test -c`
+*.test
+
+# Archivos de salida de coverage
+*.out
+coverage/
+
+# Directorio de dependencias (para proyectos que usan vendor)
+vendor/
+node_modules/
+
+# Artefactos frontend
+dist/
+*.tsbuildinfo
+
+# Archivos de entorno y variables secretas
+.env
+.env.prod
+.env.dev
+*.local
+Rubrica_Tecnica_Microservicios.md
+
+# Archivos de IDE y sistema operativo
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+Rubrica_Tecnica_Microservicios.md
+
+node_modules/
+dist/auth-service-bin
+availability-service/availability-service
+booking-service/booking-service
+payment-service/payment-service
+api-gateway/api-gateway
+api-gateway\api-gateway-bin
+auth-service/auth-service
