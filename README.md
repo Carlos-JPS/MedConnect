@@ -157,12 +157,14 @@ Los datos de prueba se insertan automáticamente al levantar el sistema. Deberí
 
 ```json
 {
-  "patient_id": "{{patient_id}}",
   "doctor_id": "{{doctor_id}}",
   "slot_id": "{{slot_id}}",
   "notes": "Control de rutina"
 }
 ```
+
+> [!NOTE]
+> El `patient_id` ya no es necesario en el JSON. El API Gateway lo obtiene automáticamente de tu token de autenticación.
 
 Copia el `booking_id` de la respuesta y actualízalo en el entorno de Insomnia.
 
@@ -175,11 +177,13 @@ Copia el `booking_id` de la respuesta y actualízalo en el entorno de Insomnia.
 ```json
 {
   "booking_id": "{{booking_id}}",
-  "user_id": "{{patient_id}}",
   "amount": 15000,
   "currency": "CLP"
 }
 ```
+
+> [!NOTE]
+> El `user_id` se extrae automáticamente del token.
 
 Copia el `payment_id` de la respuesta y actualízalo en el entorno de Insomnia.
 
@@ -255,15 +259,17 @@ curl -s -X POST http://localhost:8080/auth/login \
 # Paso 3: Consultar disponibilidad (los datos se insertan automáticamente al levantar el sistema)
 curl -s "http://localhost:8080/availability/slots?specialty=Cardiología&start_date=2026-01-01T00:00:00Z&end_date=2027-12-31T00:00:00Z"
 
-# Paso 4: Crear reserva (guarda el booking_id de la respuesta)
+# Paso 4: Crear reserva (reemplaza {TOKEN} con el valor del Paso 2)
 curl -s -X POST http://localhost:8080/bookings \
   -H "Content-Type: application/json" \
-  -d '{"patient_id":"46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235","doctor_id":"7e0d2ab1-164e-4a28-8b95-f24293dd0e91","slot_id":"0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21","notes":"Control de rutina"}'
+  -H "Authorization: Bearer {TOKEN}" \
+  -d '{"doctor_id":"7e0d2ab1-164e-4a28-8b95-f24293dd0e91","slot_id":"0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21","notes":"Control de rutina"}'
 
-# Paso 5: Crear pago (reemplaza {BOOKING_ID} con el valor del paso anterior)
+# Paso 5: Crear pago
 curl -s -X POST http://localhost:8080/payments \
   -H "Content-Type: application/json" \
-  -d '{"booking_id":"{BOOKING_ID}","user_id":"46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235","amount":15000,"currency":"CLP"}'
+  -H "Authorization: Bearer {TOKEN}" \
+  -d '{"booking_id":"{BOOKING_ID}","amount":15000,"currency":"CLP"}'
 
 # Paso 6: Procesar pago (reemplaza {PAYMENT_ID} con el valor del paso anterior)
 curl -s -X POST http://localhost:8080/payments/{PAYMENT_ID}/process \
