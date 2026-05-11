@@ -72,17 +72,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/auth/users/"):
 		h.getUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/bookings":
-		h.createBooking(w, r)
+		h.withAuth(h.createBooking)(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/bookings":
-		h.listBookings(w, r)
+		h.withAuth(h.listBookings)(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/bookings/"):
-		h.getBooking(w, r)
+		h.withAuth(h.getBooking)(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/bookings/") && strings.HasSuffix(r.URL.Path, "/cancel"):
-		h.cancelBooking(w, r)
+		h.withAuth(h.cancelBooking)(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/bookings/") && strings.HasSuffix(r.URL.Path, "/confirm"):
-		h.confirmBooking(w, r)
+		h.withAuth(h.confirmBooking)(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/payments":
-		h.createPayment(w, r)
+		h.withAuth(h.createPayment)(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/payments/") && strings.HasSuffix(r.URL.Path, "/process"):
 		h.processPayment(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/payments/") && strings.HasSuffix(r.URL.Path, "/refund"):
@@ -116,18 +116,27 @@ type createBookingRequest struct {
 }
 
 func (h *Handler) createBooking(w http.ResponseWriter, r *http.Request) {
+	// Obtener el ID del paciente directamente del contexto (inyectado por el middleware)
+	patientID, ok := r.Context().Value(userIDKey).(string)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "identidad de usuario no encontrada")
+		return
+	}
+
 	var req createBookingRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "json invalido")
 		return
 	}
-	if req.PatientID == "" || req.DoctorID == "" || req.SlotID == "" {
-		writeError(w, http.StatusBadRequest, "patient_id, doctor_id y slot_id son obligatorios")
+
+	// Forzamos que el PatientId sea el del usuario autenticado
+	if req.DoctorID == "" || req.SlotID == "" {
+		writeError(w, http.StatusBadRequest, "doctor_id y slot_id son obligatorios")
 		return
 	}
 
 	resp, err := h.booking.CreateBooking(r.Context(), &pb.CreateBookingRequest{
-		PatientId: req.PatientID,
+		PatientId: patientID,
 		DoctorId:  req.DoctorID,
 		SlotId:    req.SlotID,
 		Notes:     req.Notes,
@@ -145,9 +154,9 @@ func (h *Handler) createBooking(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listBookings(w http.ResponseWriter, r *http.Request) {
-	patientID := r.URL.Query().Get("patient_id")
-	if patientID == "" {
-		writeError(w, http.StatusBadRequest, "patient_id es obligatorio")
+	patientID, ok := r.Context().Value(userIDKey).(string)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "identidad de usuario no encontrada")
 		return
 	}
 
@@ -272,19 +281,25 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := r.Context().Value(userIDKey).(string)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "identidad de usuario no encontrada")
+		return
+	}
+
 	var req createPaymentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "json invalido")
 		return
 	}
-	if req.BookingID == "" || req.UserID == "" || req.Amount <= 0 || req.Currency == "" {
-		writeError(w, http.StatusBadRequest, "booking_id, user_id, amount y currency son obligatorios")
+	if req.BookingID == "" || req.Amount <= 0 || req.Currency == "" {
+		writeError(w, http.StatusBadRequest, "booking_id, amount y currency son obligatorios")
 		return
 	}
 
 	resp, err := h.payment.CreatePayment(r.Context(), &paymentpb.CreatePaymentRequest{
 		BookingId: req.BookingID,
-		UserId:    req.UserID,
+		UserId:    userID,
 		Amount:    req.Amount,
 		Currency:  req.Currency,
 	})
@@ -1008,4 +1023,33 @@ func (h *Handler) requireAuthClient(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+type contextKey string
+
+const userIDKey contextKey = "user_id"
+
+func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		if token == "" || authHeader == token {
+			writeError(w, http.StatusUnauthorized, "token de acceso requerido")
+			return
+		}
+
+		resp, err := h.auth.ValidateToken(r.Context(), &authpb.ValidateTokenRequest{
+			AccessToken: token,
+		})
+
+		if err != nil || !resp.GetValid() {
+			writeError(w, http.StatusUnauthorized, "token inválido o expirado")
+			return
+		}
+
+		// Inyectar el ID del usuario verificado en el contexto
+		ctx := context.WithValue(r.Context(), userIDKey, resp.GetUserId())
+		next(w, r.WithContext(ctx))
+	}
 }
