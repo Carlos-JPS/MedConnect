@@ -66,9 +66,13 @@ auth-service/
 
 | Variable | Descripción | Ejemplo |
 |---|---|---|
-| `AUTH_SERVICE_PORT` | Puerto gRPC | `50051` |
-| `AUTH_DB_DSN` | DSN de conexión a PostgreSQL | `postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable` |
-| `JWT_SECRET` | Clave secreta para firmar tokens JWT | `mi-clave-secreta-segura` |
+| `AUTH_SERVICE_HOST` | Host de escucha del servicio gRPC | `0.0.0.0` |
+| `AUTH_SERVICE_PORT` | Puerto del servicio gRPC | `50051` |
+| `AUTH_DB_NAME` | Nombre de la base de datos | `auth_db` |
+| `AUTH_DB_USER` | Usuario de PostgreSQL | `auth` |
+| `AUTH_DB_PASSWORD` | Contraseña de PostgreSQL | `auth_password` |
+| `AUTH_DB_DSN` | DSN completo de conexión (usado por la app) | `postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable` |
+| `JWT_SECRET` | Clave secreta para firmar y validar tokens JWT | `medconnect-jwt-secret-change-me` |
 
 ## Integración con API Gateway
 
