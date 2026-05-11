@@ -7,41 +7,18 @@ meta:
   modified: 1774960302076
   description: ""
 collection:
-  - url: https://www.getonbrd.com/api/v0//search/jobs?country_code=CL&page=1&per_page=120
-    name: New Request
-    meta:
-      id: req_af94df5ca4864901abe569f3a76347c8
-      created: 1774960347078
-      modified: 1774960360676
-      isPrivate: false
-      description: ""
-      sortKey: -1774960347078
-    method: GET
-    headers:
-      - name: User-Agent
-        value: insomnia/12.4.0
-        description: ""
-        disabled: false
-    settings:
-      renderRequestBody: true
-      encodeUrl: true
-      followRedirects: global
-      cookies:
-        send: true
-        store: true
-      rebuildPath: true
   - name: Payments
     meta:
-      id: fld_50bb4e9788fd4e2fbb9cce855be7b0ca
+      id: fld_49d78822382044ba93b1a672b6a6e00b
       created: 1778128210470
-      modified: 1778128229155
+      modified: 1778463218182
       sortKey: -1778128210470
       description: Flujo de pagos por api-gateway
     children:
       - url: "{{ _.base_url }}/payments"
         name: Create Payment
         meta:
-          id: req_076b43b5eb144dca94a5437072a47323
+          id: req_da6d10c13cd34799bc99505c0afb42c0
           created: 1778128115521
           modified: 1778128223348
           isPrivate: false
@@ -74,7 +51,7 @@ collection:
       - url: "{{ _.base_url }}/payments/{{ _.payment_id }}/process"
         name: Process Payment
         meta:
-          id: req_75dc2487a2a94cb48b43b9fa7fd2ee8c
+          id: req_87260e44d26142c2a48b4f4a23c060b5
           created: 1778128230036
           modified: 1778128304431
           isPrivate: false
@@ -105,7 +82,7 @@ collection:
       - url: "{{ _.base_url }}/payments/{{ _.payment_id }}"
         name: Get Payment By Id
         meta:
-          id: req_82aee48a36904e6c95b89d7e37c92d7f
+          id: req_2d8573ed716a4d21a47c1849d7d32c61
           created: 1778128320462
           modified: 1778128354654
           isPrivate: false
@@ -127,7 +104,7 @@ collection:
       - url: "{{ _.base_url }}/payments/user/{{ _.patient_id }}"
         name: Get User Payments
         meta:
-          id: req_859c1d34520a43c3941440e70901f666
+          id: req_4c59188445d344f8aa5c395c878a395b
           created: 1778128387951
           modified: 1778128417610
           isPrivate: false
@@ -149,7 +126,7 @@ collection:
       - url: "{{ _.base_url }}/payments/booking/{{ _.booking_id }}"
         name: Get Payment By Booking
         meta:
-          id: req_2dcc150bf468452297fa05ebe2acefcb
+          id: req_f82bddb9bbcf41fb8b88611a0cc98922
           created: 1778128425000
           modified: 1778128425000
           isPrivate: false
@@ -171,7 +148,7 @@ collection:
       - url: "{{ _.base_url }}/payments/{{ _.payment_id }}/refund"
         name: Process Refund
         meta:
-          id: req_9c6f4b2edb124fd5822dc69cfc0fee43
+          id: req_b2f86c0489664363a1b9635f1da31462
           created: 1778128447282
           modified: 1778128517804
           isPrivate: false
@@ -199,20 +176,25 @@ collection:
             send: true
             store: true
           rebuildPath: true
+    authentication:
+      type: bearer
+      disabled: true
+      token: "{% response 'body', 'req_57ea383aac914befacc235a42b510e74',
+        'b64::JC5hY2Nlc3NfdG9rZW4=::46b', 'always', 60 %}"
   - name: Bookings
     meta:
-      id: fld_620de59e2fec4f36a48f510d8a5af110
+      id: fld_0e75313b8d294d3ea5619e180f194270
       created: 1778129000000
-      modified: 1778129000000
+      modified: 1778463182580
       sortKey: -1778129000000
       description: Flujo de reservas por api-gateway
     children:
-      - url: "{{ _.base_url }}/bookings"
+      - url: "{{ _.base_url.base_url }}/bookings"
         name: Create Booking
         meta:
-          id: req_886db454d1aa4745bc63dbb4a924b0c3
+          id: req_4aca8acc729044afb2045fcdc5b839c5
           created: 1778129001000
-          modified: 1778129001000
+          modified: 1778462985218
           isPrivate: false
           description: Crea reserva PENDING_PAYMENT. Requiere availability-service real
             para respuesta exitosa.
@@ -222,9 +204,9 @@ collection:
           mimeType: application/json
           text: |-
             {
-              "patient_id": "{{ _.patient_id }}",
-              "doctor_id": "{{ _.doctor_id }}",
-              "slot_id": "{{ _.slot_id }}",
+              "patient_id": "{{ _.base_url.patient_id }}",
+              "doctor_id": "{{ _.base_url.doctor_id }}",
+              "slot_id": "{{ _.base_url.slot_id }}",
               "notes": "Reserva creada desde Insomnia"
             }
         headers:
@@ -233,6 +215,11 @@ collection:
           - name: User-Agent
             value: insomnia/12.5.0
             disabled: false
+        authentication:
+          type: bearer
+          disabled: false
+          token: "{% response 'body', 'req_57ea383aac914befacc235a42b510e74',
+            'b64::JC5hY2Nlc3NfdG9rZW4=::46b', 'when-expired', 60 %}"
         settings:
           renderRequestBody: true
           encodeUrl: true
@@ -241,12 +228,12 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: "{{ _.base_url }}/bookings?patient_id={{ _.patient_id }}"
+      - url: "{{ _[''].base_url }}/bookings?patient_id={{ _.patient_id }}"
         name: List Patient Bookings
         meta:
-          id: req_86a94ead7cfb429db3aa6b8ff09c06f2
+          id: req_39d89cdd77664a48897c64303edf2d1e
           created: 1778129002000
-          modified: 1778129002000
+          modified: 1778463881891
           isPrivate: false
           description: Lista reservas de un paciente.
           sortKey: -1778129002000
@@ -267,7 +254,7 @@ collection:
           }}&status=PENDING_PAYMENT"
         name: List Pending Bookings
         meta:
-          id: req_feb7e01c3ed8446b8bc29f54f95826c9
+          id: req_fb216cafb8d74e289f0d9772424e8c54
           created: 1778129003000
           modified: 1778129003000
           isPrivate: false
@@ -289,7 +276,7 @@ collection:
       - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}"
         name: Get Booking Detail
         meta:
-          id: req_52a392d819b34f3ba6483a603d5f5cd8
+          id: req_c9d5c8a7911d45469dc70afab1ef9e66
           created: 1778129004000
           modified: 1778129004000
           isPrivate: false
@@ -311,7 +298,7 @@ collection:
       - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}/confirm"
         name: Confirm Booking
         meta:
-          id: req_6f22d56a18f64a07891d84e74255167b
+          id: req_3c99c2c030ef40f9a16f754dcc1c9e0a
           created: 1778129005000
           modified: 1778129005000
           isPrivate: false
@@ -341,13 +328,13 @@ collection:
       - url: "{{ _.base_url }}/bookings/{{ _.booking_id }}/cancel"
         name: Cancel Booking
         meta:
-          id: req_2075b50b8fe24420b54eeec9897dcc35
+          id: req_ddb1cee1dcc04148a334db7a276f26bf
           created: 1778129006000
-          modified: 1778129006000
+          modified: 1778463647431
           isPrivate: false
           description: Cancela una reserva y libera el slot en availability-service.
           sortKey: -1778129006000
-        method: PATCH
+        method: GET
         body:
           mimeType: application/json
           text: |-
@@ -368,11 +355,15 @@ collection:
             send: true
             store: true
           rebuildPath: true
+    authentication:
+      type: bearer
+      token: "{% response 'body', 'req_57ea383aac914befacc235a42b510e74',
+        'b64::JC5hY2Nlc3NfdG9rZW4=::46b', 'when-expired', 60 %}"
   - name: Availability
     meta:
-      id: fld_216bd60e381945eab370d478185dd3e4
+      id: fld_6be6f482e4354e6b9b12eabc830f56ba
       created: 1778129100000
-      modified: 1778129100000
+      modified: 1778463144359
       sortKey: -1778129100000
       description: Endpoints de disponibilidad por api-gateway
     children:
@@ -381,7 +372,7 @@ collection:
           T00:00:00-04:00&to_date=2026-05-31T23:59:59-04:00"
         name: Get Available Slots
         meta:
-          id: req_d99e02d9a98a49c3bf4765f31821af9c
+          id: req_80e6e12d3e0943318b39004c67391327
           created: 1778129101000
           modified: 1778129101000
           isPrivate: false
@@ -400,14 +391,14 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: "{{ _.base_url }}/availability/doctors/{{ _.doctor_id
+      - url: "{{ _.base_url.base_url }}/availability/doctors/{{ _.base_url.doctor_id
           }}?from_date=2026-05-01T00:00:00-04:00&to_date=2026-05-31T23:59:59-04\
           :00"
         name: Get Doctor Agenda
         meta:
-          id: req_ed517a90b7c142d685870adc9ac0252e
+          id: req_0a06b13152c946e0904bc7a1a1289a66
           created: 1778129102000
-          modified: 1778129102000
+          modified: 1778463250293
           isPrivate: false
           description: Obtiene la agenda completa de un doctor (incluye todos los estados).
           sortKey: -1778129102000
@@ -427,7 +418,7 @@ collection:
       - url: "{{ _.base_url }}/availability/hold"
         name: Hold Slot
         meta:
-          id: req_1945d71a3fe94b84b0a5c4a7f5c11c2e
+          id: req_1a546c4e46a74059b964baffcb8300b4
           created: 1778129103000
           modified: 1778129103000
           isPrivate: false
@@ -459,7 +450,7 @@ collection:
       - url: "{{ _.base_url }}/availability/confirm"
         name: Confirm Slot Booking
         meta:
-          id: req_f5a055b8ea154803ae50041435ee26dc
+          id: req_875cf2466d2e489aa69670befa89a37c
           created: 1778129104000
           modified: 1778129104000
           isPrivate: false
@@ -490,7 +481,7 @@ collection:
       - url: "{{ _.base_url }}/availability/release"
         name: Release Held Slot
         meta:
-          id: req_4a6d9420b3e345f49b0feed010ed1098
+          id: req_c4a5af19336043ccb7691c05ce2000fc
           created: 1778129105000
           modified: 1778129105000
           isPrivate: false
@@ -518,20 +509,24 @@ collection:
             send: true
             store: true
           rebuildPath: true
+    authentication:
+      type: bearer
+      token: "{% response 'body', 'req_57ea383aac914befacc235a42b510e74',
+        'b64::JC5hY2Nlc3NfdG9rZW4=::46b', 'when-expired', 60 %}"
   - name: Authentication
     meta:
-      id: fld_0dea46763e864f4a9c4fc17f86e5a59b
+      id: fld_89ceb1a096424d888be1386d0f55ba5b
       created: 1778130000000
       modified: 1778130000000
       sortKey: -1778130000000
       description: Registro e inicio de sesión
     children:
-      - url: "{{ _.base_url }}/auth/register"
+      - url: "{{ _.base_url.base_url }}/auth/register"
         name: Register User
         meta:
-          id: req_7c577b34cdee468f949ccdbb6b6a1563
+          id: req_1adb69fd18c04e2882ef37374953cf75
           created: 1778130001000
-          modified: 1778291872725
+          modified: 1778461685389
           isPrivate: false
           description: Registra un nuevo usuario en el sistema.
           sortKey: -1778130001000
@@ -556,12 +551,12 @@ collection:
             send: true
             store: true
           rebuildPath: true
-      - url: "{{ _.base_url }}/auth/login"
+      - url: "{{ _[''].base_url }}/auth/login"
         name: Login User
         meta:
-          id: req_d19a061dc4d5437f85b286b663dcb966
+          id: req_57ea383aac914befacc235a42b510e74
           created: 1778130002000
-          modified: 1778291917166
+          modified: 1778463712947
           isPrivate: false
           description: Inicia sesión y obtiene el JWT.
           sortKey: -1778130002000
@@ -587,7 +582,7 @@ collection:
       - url: "{{ _.base_url }}/auth/validate"
         name: Validar token
         meta:
-          id: req_2e7773bd3dd74dd688f69e9854dd1ee0
+          id: req_d0d71f622ae441ed90e400762e667da4
           created: 1778292605458
           modified: 1778292636101
           isPrivate: false
@@ -614,7 +609,7 @@ collection:
       - url: "{{ _.base_url }}/auth/users/247c8c55-b9b5-45e6-b03b-af6c900cf844"
         name: Get User By Id
         meta:
-          id: req_1d36202ec21f4d1db7f4949ac57fc6d7
+          id: req_c09fe14663b6419992d5473b7a5dd782
           created: 1778292683765
           modified: 1778292748986
           isPrivate: false
@@ -642,17 +637,18 @@ cookieJar:
     created: 1774960314357
     modified: 1774960314357
 environments:
-  name: Base Environment
+  name: local
   meta:
     id: env_99d30891da4bdcebc63947a8fc17f076de878684
     created: 1774960314350
-    modified: 1774960314350
+    modified: 1778463868389
     isPrivate: false
   data:
-    base_url: http://localhost:8080
-    patient_id: 46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235
-    doctor_id: 7e0d2ab1-164e-4a28-8b95-f24293dd0e91
-    slot_id: 0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21
-    booking_id: ""
-    payment_id: ""
-    payment_method_id: method-demo
+    "":
+      base_url: http://localhost:8080
+      patient_id: 46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235
+      doctor_id: 7e0d2ab1-164e-4a28-8b95-f24293dd0e91
+      slot_id: 0f5c2b6a-1a87-4b7e-ae2c-37ef2f9f1c21
+      booking_id: ""
+      payment_id: ""
+      payment_method_id: method-demo
