@@ -139,6 +139,51 @@ Resultado:
 PASS
 ```
 
+### Estado de implementación de la configuración
+
+También se extendió `availability-service/modules/config/config.go` para cargar configuración opcional de sharding sin romper el modo actual de DB única.
+
+Variables incorporadas:
+
+```env
+AVAILABILITY_SHARDING_ENABLED
+AVAILABILITY_PARTITION_COUNT
+AVAILABILITY_SHARDS
+AVAILABILITY_PARTITION_MAP
+AVAILABILITY_SHARD0_DSN
+AVAILABILITY_SHARD1_DSN
+```
+
+El comportamiento por defecto sigue siendo compatible:
+
+```text
+si AVAILABILITY_SHARDING_ENABLED no está presente -> usar DB única con DSN()
+```
+
+Cuando sharding está habilitado, `ValidateShardingConfig()` valida:
+
+- cantidad de particiones;
+- shards declarados;
+- DSN por shard;
+- mapa completo de particiones;
+- referencias a shards existentes.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/config/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Esta etapa aún no abre múltiples conexiones PostgreSQL; solo deja preparada la configuración para que el siguiente paso pueda construir el repositorio shardeado.
+
 ---
 
 ## 6. Alternativas descartadas

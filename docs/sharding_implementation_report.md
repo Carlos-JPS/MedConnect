@@ -73,6 +73,8 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 | 2026-06-29 | Verificación post-corrección | `POST /bookings` con slot disponible y posterior cancelación | Reserva retorna `201` y cancelación retorna `200` | Completado |
 | 2026-06-29 | Router de sharding | Crear `availability-service/modules/sharding` | Router por `doctor_id -> CRC32 -> partición lógica -> shard` implementado | Completado |
 | 2026-06-29 | Tests router | `cd availability-service && go test ./modules/sharding/... && go test ./...` | PASS | Completado |
+| 2026-06-29 | Configuración sharding | Extender `availability-service/modules/config/config.go` | Carga `AVAILABILITY_SHARDING_*` con fallback a DB única | Completado |
+| 2026-06-29 | Tests configuración | `cd availability-service && go test ./modules/config/... && go test ./...` | PASS | Completado |
 
 ---
 
@@ -321,7 +323,7 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 - [x] Investigar y corregir comportamiento baseline de `HoldSlot`.
 - [x] Implementar paquete `availability-service/modules/sharding`.
 - [x] Agregar tests del router.
-- [ ] Integrar configuración `AVAILABILITY_SHARDING_*` con fallback a DB única.
+- [x] Integrar configuración `AVAILABILITY_SHARDING_*` con fallback a DB única.
 - [ ] Actualizar este reporte con comandos, resultados y decisiones.
 - [ ] Actualizar `docs/sharding_technical_doc.md` con evidencia relevante.
 
@@ -382,3 +384,61 @@ Casos cubiertos por tests:
 - rechazo de particiones fuera de rango;
 - `AllShards()` ordenado y sin duplicados;
 - copia defensiva del `partitionMap`.
+
+---
+
+## 13. Integración de configuración de sharding
+
+Se extendió la configuración de `availability-service` para soportar modo sharded sin romper el modo actual de DB única.
+
+Archivos modificados/creados:
+
+```text
+availability-service/modules/config/config.go
+availability-service/modules/config/config_test.go
+availability-service/.env.example
+```
+
+Variables soportadas:
+
+```env
+AVAILABILITY_SHARDING_ENABLED=true
+AVAILABILITY_PARTITION_COUNT=16
+AVAILABILITY_SHARDS=shard0,shard1
+AVAILABILITY_PARTITION_MAP=0:shard0,1:shard1,2:shard0,3:shard1
+AVAILABILITY_SHARD0_DSN=...
+AVAILABILITY_SHARD1_DSN=...
+```
+
+Decisiones:
+
+- Si `AVAILABILITY_SHARDING_ENABLED` está ausente, el servicio sigue en modo DB única.
+- `DSN()` se mantiene compatible con las variables actuales `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+- Si sharding está habilitado y no se define `AVAILABILITY_PARTITION_COUNT`, se usa `16` como default.
+- `ValidateShardingConfig()` valida el mapa usando el router de `modules/sharding` para no duplicar reglas.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/config/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Casos cubiertos por tests:
+
+- modo single DB sin variables de sharding;
+- modo sharded válido;
+- default de `16` particiones cuando sharding está habilitado;
+- partition map incompleto;
+- DSN faltante para un shard declarado;
+- booleano inválido;
+- partition count inválido.
+
+Pendiente: esta configuración todavía no se conecta al `main.go` ni al repositorio shardeado. Ese será un paso posterior.
