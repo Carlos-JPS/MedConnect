@@ -19,9 +19,35 @@ func NewPostgresRepository(dsn string) (*PostgresRepository, error) {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 	return &PostgresRepository{db: db}, nil
+}
+
+// ListSlotIDs returns the slot identifiers stored in this concrete Postgres
+// repository. Sharded startup uses it to build the slot_id -> shard directory
+// needed by mutation requests that do not carry doctor_id in the current proto.
+func (r *PostgresRepository) ListSlotIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM availability_slots ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("error listing slot ids: %w", err)
+	}
+	defer rows.Close()
+
+	var slotIDs []string
+	for rows.Next() {
+		var slotID string
+		if err := rows.Scan(&slotID); err != nil {
+			return nil, fmt.Errorf("error scanning slot id: %w", err)
+		}
+		slotIDs = append(slotIDs, slotID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating slot ids: %w", err)
+	}
+
+	return slotIDs, nil
 }
 
 func (r *PostgresRepository) GetAvailableSlots(ctx context.Context, specialty string, startDate, endDate time.Time) ([]*Slot, error) {

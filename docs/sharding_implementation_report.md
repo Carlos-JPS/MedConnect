@@ -75,6 +75,11 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 | 2026-06-29 | Tests router | `cd availability-service && go test ./modules/sharding/... && go test ./...` | PASS | Completado |
 | 2026-06-29 | Configuración sharding | Extender `availability-service/modules/config/config.go` | Carga `AVAILABILITY_SHARDING_*` con fallback a DB única | Completado |
 | 2026-06-29 | Tests configuración | `cd availability-service && go test ./modules/config/... && go test ./...` | PASS | Completado |
+| 2026-06-29 | Repositorio shardeado | Crear `availability-service/modules/repository/sharded.go` | Routing por doctor, scatter/gather y directorio `slot_id -> shard` implementados de forma aislada | Completado |
+| 2026-06-29 | Tests repositorio shardeado | `cd availability-service && go test ./modules/repository/... && go test ./...` | PASS | Completado |
+| 2026-06-29 | Conexión en arranque | Modificar `availability-service/main.go` | `buildRepository` selecciona single DB o sharded según configuración | Completado |
+| 2026-06-29 | Directorio real de slots | Agregar `PostgresRepository.ListSlotIDs` | El directorio `slot_id -> shard` se construye al iniciar consultando cada shard | Completado |
+| 2026-06-29 | Tests arranque sharded | `cd availability-service && go test ./...` | PASS | Completado |
 
 ---
 
@@ -85,17 +90,18 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 - El stack backend fue levantado posteriormente y quedó activo.
 - Antes de levantar el stack había contenedores antiguos detenidos del proyecto.
 - `docker-compose.yml` todavía define una sola base de disponibilidad: `availability-db`.
-- `availability-service` todavía usa una sola conexión PostgreSQL.
-- No existen variables `AVAILABILITY_SHARDING_*` en el código actual.
+- `availability-service/main.go` ya selecciona entre modo single DB y modo sharded según configuración.
+- La configuración `AVAILABILITY_SHARDING_*` ya está conectada al arranque del servicio, aunque Docker Compose aún no define shards reales.
 - El stack backend fue levantado con `docker compose up -d --build api-gateway`.
 - `docker compose ps` mostró servicios backend activos y DBs healthy.
-- `availability-service/modules/config/config.go` solo carga:
+- `availability-service/modules/config/config.go` mantiene compatibilidad con:
   - `DB_HOST`
   - `DB_PORT`
   - `DB_USER`
   - `DB_PASSWORD`
   - `DB_NAME`
   - `GRPC_PORT`
+  - `AVAILABILITY_SHARDING_*`
 
 ---
 
@@ -303,16 +309,14 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 
 ---
 
-## 10. Riesgos antes de implementar router
+## 10. Riesgos actuales antes de integrar shards reales
 
-1. Baseline end-to-end aún no está comprobado porque los servicios están detenidos.
-2. No existe `.env` raíz, aunque Docker Compose tiene defaults funcionales.
-3. Tests de `api-gateway` fallan por autenticación requerida.
-4. `availability-service` no tiene tests reales; habrá que agregar pruebas para sharding.
-5. Hay contenedores antiguos detenidos con exit code distinto de cero en algunos servicios.
-6. Debe evitarse tocar `frontend/`.
-7. El slot fijo del README está `held` por datos persistidos antiguos; para pruebas repetibles conviene usar slots disponibles o resetear volúmenes.
-8. README y handler difieren en nombres de query params para disponibilidad: README usa `start_date`/`end_date`; el código exige `from_date`/`to_date`.
+1. `docker-compose.yml` todavía tiene una sola DB de disponibilidad; falta crear `availability-db-shard-0` y `availability-db-shard-1`.
+2. El directorio `slot_id -> shard` se construye solo al iniciar; si se crean slots nuevos en caliente, no aparecerán hasta reiniciar o refrescar el directorio.
+3. Falta validar el modo sharded con PostgreSQL reales porque aún no existe infraestructura Compose de shards.
+4. Tests de `api-gateway` fallan por autenticación requerida en pruebas preexistentes.
+5. El slot fijo del README está `held` por datos persistidos antiguos; para pruebas repetibles conviene usar slots disponibles o resetear volúmenes.
+6. README y handler difieren en nombres de query params para disponibilidad: README usa `start_date`/`end_date`; el código exige `from_date`/`to_date`.
 
 ---
 
@@ -324,8 +328,11 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 - [x] Implementar paquete `availability-service/modules/sharding`.
 - [x] Agregar tests del router.
 - [x] Integrar configuración `AVAILABILITY_SHARDING_*` con fallback a DB única.
-- [ ] Actualizar este reporte con comandos, resultados y decisiones.
-- [ ] Actualizar `docs/sharding_technical_doc.md` con evidencia relevante.
+- [x] Implementar repositorio shardeado aislado.
+- [x] Actualizar este reporte con comandos, resultados y decisiones.
+- [x] Actualizar `docs/sharding_technical_doc.md` con evidencia relevante.
+- [x] Conectar `main.go` para construir `ShardedRepository` cuando sharding esté habilitado.
+- [ ] Crear infraestructura Docker Compose con dos shards de availability.
 
 ---
 
@@ -441,4 +448,111 @@ Casos cubiertos por tests:
 - booleano inválido;
 - partition count inválido.
 
-Pendiente: esta configuración todavía no se conecta al `main.go` ni al repositorio shardeado. Ese será un paso posterior.
+Esta configuración ya se conecta posteriormente desde `main.go`; aún falta infraestructura Docker Compose con shards reales.
+
+---
+
+## 14. Repositorio shardeado aislado
+
+Se implementó una primera versión aislada de `ShardedRepository` para probar la lógica de routing antes de conectarla al arranque real del servicio.
+
+Archivos creados:
+
+```text
+availability-service/modules/repository/sharded.go
+availability-service/modules/repository/sharded_test.go
+```
+
+Responsabilidades implementadas:
+
+- `GetDoctorAgenda` enruta a un solo shard usando `router.ShardForDoctor(doctorID)`.
+- `GetAvailableSlots` ejecuta scatter/gather sobre todos los shards conocidos por el router.
+- `HoldSlot`, `ConfirmSlotBooking` y `ReleaseHeldSlot` usan un directorio `slot_id -> shard`.
+- Si un shard falla durante scatter/gather, la consulta completa falla sin retornar resultados parciales.
+- Los mapas de shards y directorio se copian internamente para evitar mutaciones externas.
+
+Decisión técnica aplicada:
+
+```text
+doctor_id -> router -> shard único
+specialty -> scatter/gather
+slot_id -> directorio -> shard dueño
+```
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/repository/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Casos cubiertos por tests:
+
+- routing single-shard por doctor;
+- scatter/gather ordenado por `StartTime`;
+- error si cualquier shard falla en scatter/gather;
+- mutaciones por directorio `slot_id -> shard`;
+- error si un slot no existe en el directorio;
+- validaciones del constructor;
+- protección contra mutaciones externas de maps.
+
+El directorio `slot_id -> shard` ya se construye posteriormente al iniciar, consultando los slots de cada shard mediante `PostgresRepository.ListSlotIDs`.
+
+---
+
+## 15. Conexión del modo sharded en `main.go`
+
+Se conectó el arranque de `availability-service` para elegir entre modo single DB y modo sharded.
+
+Archivos modificados/creados:
+
+```text
+availability-service/main.go
+availability-service/main_test.go
+availability-service/modules/repository/postgres.go
+```
+
+Comportamiento implementado:
+
+- Si `cfg.ShardingEnabled == false`, se mantiene el flujo anterior con `connectWithRetry(cfg.DSN(), ...)`.
+- Si `cfg.ShardingEnabled == true`, se valida `cfg.ValidateShardingConfig()`.
+- Se crea el router con `cfg.PartitionCount` y `cfg.PartitionMap`.
+- Se abre un `PostgresRepository` por shard usando `cfg.ShardDSNs`.
+- Se construye el directorio `slot_id -> shard` consultando cada shard.
+- Se instancia `repository.NewShardedRepository(router, shardRepos, slotDirectory)`.
+
+Para construir el directorio se agregó en el repositorio concreto:
+
+```go
+ListSlotIDs(ctx context.Context) ([]string, error)
+```
+
+Este método no se agregó a `AvailabilityRepository`; se usa solo durante el arranque sharded para leer metadata real desde PostgreSQL.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Casos cubiertos por tests nuevos:
+
+- construcción correcta del directorio `slot_id -> shard`;
+- detección de `slot_id` duplicado entre shards;
+- propagación de error al listar slots de un shard.
+
+Riesgo pendiente: el directorio se construye solo al iniciar. Si en el futuro existen endpoints para crear slots dinámicamente, habrá que refrescar el directorio o persistir la metadata en una tabla dedicada.

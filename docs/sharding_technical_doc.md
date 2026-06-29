@@ -182,7 +182,81 @@ Resultado:
 PASS
 ```
 
-Esta etapa aún no abre múltiples conexiones PostgreSQL; solo deja preparada la configuración para que el siguiente paso pueda construir el repositorio shardeado.
+Esta configuración ya es usada por `main.go` para seleccionar modo single DB o modo sharded. Aún falta crear la infraestructura Docker Compose con shards reales.
+
+### Estado de implementación del repositorio shardeado
+
+Se implementó una versión aislada de `ShardedRepository` en:
+
+```text
+availability-service/modules/repository/sharded.go
+```
+
+El repositorio aplica las reglas centrales del diseño:
+
+```text
+GetDoctorAgenda(doctor_id) -> un solo shard
+GetAvailableSlots(specialty) -> scatter/gather
+Hold/Confirm/Release(slot_id) -> directorio slot_id -> shard
+```
+
+También se agregó `ErrSlotShardNotFound` para distinguir el caso en que un `slot_id` no tiene entrada en el directorio.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/repository/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Esta etapa ya está conectada desde `main.go`, pero aún no se ha validado con PostgreSQL shardeados reales porque falta la infraestructura Docker Compose.
+
+### Estado de integración en el arranque
+
+Se modificó `availability-service/main.go` para construir el repositorio adecuado según configuración:
+
+```text
+AVAILABILITY_SHARDING_ENABLED=false -> PostgresRepository único
+AVAILABILITY_SHARDING_ENABLED=true  -> ShardedRepository
+```
+
+En modo sharded, el arranque realiza:
+
+1. Validación de configuración.
+2. Creación del router de particiones.
+3. Apertura de una conexión PostgreSQL por shard.
+4. Construcción del directorio `slot_id -> shard` leyendo slots reales desde cada shard.
+5. Creación de `ShardedRepository`.
+
+Para construir el directorio se agregó un método concreto:
+
+```go
+PostgresRepository.ListSlotIDs(ctx)
+```
+
+Esto mantiene el contrato principal `AvailabilityRepository` centrado en operaciones de negocio y deja la lectura del directorio como detalle de inicialización.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Limitación: el directorio se construye al iniciar. Si en el futuro se crean slots en caliente, será necesario refrescarlo o persistir el directorio como metadata actualizable.
 
 ---
 
