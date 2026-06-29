@@ -71,6 +71,8 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 | 2026-06-29 | Verificación post-corrección | `/availability/hold` con UUID válido + `/availability/release` | Hold persiste metadata y release restaura slot | Completado |
 | 2026-06-29 | Verificación post-corrección | `/availability/hold` sobre slot ya `held` | Retorna HTTP `409` en vez de error interno | Completado |
 | 2026-06-29 | Verificación post-corrección | `POST /bookings` con slot disponible y posterior cancelación | Reserva retorna `201` y cancelación retorna `200` | Completado |
+| 2026-06-29 | Router de sharding | Crear `availability-service/modules/sharding` | Router por `doctor_id -> CRC32 -> partición lógica -> shard` implementado | Completado |
+| 2026-06-29 | Tests router | `cd availability-service && go test ./modules/sharding/... && go test ./...` | PASS | Completado |
 
 ---
 
@@ -317,7 +319,66 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 - [x] Ejecutar baseline Docker con `docker compose up -d --build api-gateway`.
 - [x] Registrar evidencia inicial del flujo actual antes de sharding.
 - [x] Investigar y corregir comportamiento baseline de `HoldSlot`.
-- [ ] Implementar paquete `availability-service/modules/sharding`.
-- [ ] Agregar tests del router.
+- [x] Implementar paquete `availability-service/modules/sharding`.
+- [x] Agregar tests del router.
+- [ ] Integrar configuración `AVAILABILITY_SHARDING_*` con fallback a DB única.
 - [ ] Actualizar este reporte con comandos, resultados y decisiones.
 - [ ] Actualizar `docs/sharding_technical_doc.md` con evidencia relevante.
+
+---
+
+## 12. Implementación del router de sharding
+
+Se implementó el paquete:
+
+```text
+availability-service/modules/sharding
+```
+
+Archivos creados:
+
+```text
+availability-service/modules/sharding/router.go
+availability-service/modules/sharding/router_test.go
+```
+
+Responsabilidades implementadas:
+
+- `NewRouter(partitionCount, partitionMap)` valida que todas las particiones lógicas tengan shard asignado.
+- `ShardForDoctor(doctorID)` calcula una ruta estable usando `crc32.ChecksumIEEE`.
+- `ShardForPartition(partition)` resuelve una partición lógica ya calculada.
+- `AllShards()` retorna shards únicos, ordenados y deterministas.
+
+Decisión técnica aplicada:
+
+```text
+partition = crc32(doctor_id) % partitionCount
+shard = partitionMap[partition]
+```
+
+Esto implementa la primera pieza del diseño aprobado: particionamiento por hash de clave hacia particiones lógicas fijas.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/sharding/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
+Casos cubiertos por tests:
+
+- determinismo para el mismo `doctor_id`;
+- rechazo de `doctor_id` vacío;
+- rechazo de `partitionCount <= 0`;
+- rechazo de particiones faltantes;
+- rechazo de shard vacío;
+- rechazo de particiones fuera de rango;
+- `AllShards()` ordenado y sin duplicados;
+- copia defensiva del `partitionMap`.

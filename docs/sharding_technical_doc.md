@@ -108,6 +108,37 @@ NUM_LOGICAL_PARTITIONS = 16
 
 Esta decisión permite explicar una ruta clara de datos sin usar directamente `hash(key) % número_de_shards_físicos`.
 
+### Estado de implementación del router
+
+Ya se implementó la primera pieza del diseño en:
+
+```text
+availability-service/modules/sharding
+```
+
+El router usa `crc32.ChecksumIEEE` de la librería estándar de Go para calcular una ruta estable por `doctor_id`:
+
+```text
+partition = crc32(doctor_id) % partitionCount
+shard = partitionMap[partition]
+```
+
+Por ahora esta pieza aún no está conectada a la configuración ni al repositorio shardeado. Su objetivo actual es aislar y probar la lógica de routing antes de abrir múltiples conexiones PostgreSQL.
+
+Validación ejecutada:
+
+```bash
+cd availability-service
+go test ./modules/sharding/...
+go test ./...
+```
+
+Resultado:
+
+```text
+PASS
+```
+
 ---
 
 ## 6. Alternativas descartadas
