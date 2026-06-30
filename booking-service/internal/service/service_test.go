@@ -12,6 +12,7 @@ type fakeRepository struct {
 	createdEvent   BookingEvent
 	booking        Booking
 	updatedInput   UpdateBookingStatusInput
+	createErr      error
 	createCalls    int
 	updateCalls    int
 }
@@ -20,6 +21,9 @@ func (r *fakeRepository) CreateBooking(_ context.Context, booking Booking, event
 	r.createCalls++
 	r.createdBooking = booking
 	r.createdEvent = event
+	if r.createErr != nil {
+		return Booking{}, r.createErr
+	}
 	return booking, nil
 }
 
@@ -172,6 +176,38 @@ func TestCreateBookingReturnsErrorWhenAvailabilityTimesOut(t *testing.T) {
 	}
 	if repo.createCalls != 0 {
 		t.Fatalf("expected booking not to be persisted after availability timeout")
+	}
+}
+
+func TestCreateBookingReleasesHeldSlotWhenRepositoryCreateFails(t *testing.T) {
+	createErr := errors.New("active booking already exists for slot")
+	repo := &fakeRepository{createErr: createErr}
+	availability := &fakeAvailabilityClient{}
+	svc := NewBookingService(repo, WithAvailabilityClient(availability))
+
+	_, err := svc.CreateBooking(context.Background(), CreateBookingInput{
+		PatientID: "patient-1",
+		DoctorID:  "doctor-1",
+		SlotID:    "slot-1",
+	})
+
+	if !errors.Is(err, createErr) {
+		t.Fatalf("expected original repository error, got %v", err)
+	}
+	if repo.createCalls != 1 {
+		t.Fatalf("expected repository create to be called once, got %d", repo.createCalls)
+	}
+	if availability.releaseCalls != 1 {
+		t.Fatalf("expected held slot compensation release, got %d calls", availability.releaseCalls)
+	}
+	if availability.releaseInput.SlotID != "slot-1" {
+		t.Fatalf("expected release for slot-1, got %q", availability.releaseInput.SlotID)
+	}
+	if availability.releaseInput.BookingID == "" {
+		t.Fatal("expected release booking id to be generated")
+	}
+	if availability.releaseInput.BookingID != availability.holdInput.BookingID {
+		t.Fatalf("expected release booking id %q to match held booking id %q", availability.releaseInput.BookingID, availability.holdInput.BookingID)
 	}
 }
 

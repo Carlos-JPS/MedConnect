@@ -2,7 +2,7 @@
 
 **Bloque individual:** Sharding  
 **Servicio:** `availability-service`  
-**Estado:** diseño técnico inicial; sharding aún no implementado  
+**Estado:** sharding implementado y validado en backend local  
 **Base:** `docs/sharding_plan.md`, `rubrica_entrega2.md`, `README.md` y `Sharding y Consistent Hashing.pdf`  
 **Última actualización:** 2026-06-29
 
@@ -22,7 +22,7 @@ Cliente
   -> shard PostgreSQL correspondiente
 ```
 
-El API Gateway y `booking-service` no conocen los detalles del sharding. El routing será responsabilidad interna de `availability-service`.
+El API Gateway y `booking-service` no conocen los detalles del sharding. El routing es responsabilidad interna de `availability-service`.
 
 ---
 
@@ -123,7 +123,7 @@ partition = crc32(doctor_id) % partitionCount
 shard = partitionMap[partition]
 ```
 
-Por ahora esta pieza aún no está conectada a la configuración ni al repositorio shardeado. Su objetivo actual es aislar y probar la lógica de routing antes de abrir múltiples conexiones PostgreSQL.
+Esta pieza ya está conectada a la configuración, al repositorio shardeado y al arranque de `availability-service`.
 
 Validación ejecutada:
 
@@ -182,7 +182,7 @@ Resultado:
 PASS
 ```
 
-Esta configuración ya es usada por `main.go` para seleccionar modo single DB o modo sharded. Aún falta crear la infraestructura Docker Compose con shards reales.
+Esta configuración ya es usada por `main.go` para seleccionar modo single DB o modo sharded. Docker Compose define dos PostgreSQL reales para availability cuando sharding está habilitado.
 
 ### Estado de implementación del repositorio shardeado
 
@@ -216,7 +216,7 @@ Resultado:
 PASS
 ```
 
-Esta etapa ya está conectada desde `main.go`, pero aún no se ha validado con PostgreSQL shardeados reales porque falta la infraestructura Docker Compose.
+Esta etapa ya está conectada desde `main.go` y fue validada con PostgreSQL shardeados reales en Docker Compose.
 
 ### Estado de integración en el arranque
 
@@ -372,6 +372,12 @@ Esto evita escribir en el shard incorrecto.
 
 Si falta una partición o un shard configurado no existe, `availability-service` debería fallar al iniciar. Es preferible fallar temprano antes que enrutar datos médicos incorrectamente.
 
+### Falla posterior a `HoldSlot` en `booking-service`
+
+El flujo real de reserva primero bloquea el slot en `availability-service` y luego persiste la reserva en `booking_db`. Si el insert de la reserva falla después de un `HoldSlot` exitoso, `booking-service` ejecuta una compensación local con `ReleaseHeldSlot(slot_id, booking_id)` para no dejar el slot retenido sin reserva persistida.
+
+Si esa compensación también falla, se conserva el error original de creación de reserva y el slot podría quedar retenido hasta intervención o expiración futura. Esta limitación se acepta porque evita ocultar la causa principal del fallo y mantiene el cambio acotado al flujo actual.
+
 ---
 
 ## 9. Casos de borde
@@ -387,6 +393,7 @@ Si falta una partición o un shard configurado no existe, `availability-service`
 | Shard caído en consulta directa | Error controlado |
 | Shard caído en scatter/gather | Falla completa |
 | Médico muy demandado | Posible hot spot documentado |
+| Insert de booking falla después de `HoldSlot` | Compensación con `ReleaseHeldSlot` |
 
 ---
 
@@ -414,11 +421,13 @@ Trade-off aceptado: evita cambiar contratos gRPC actuales.
 
 La entrega no implementará rebalanceo automático. El diseño con particiones lógicas deja un camino futuro para mover particiones entre shards.
 
+### Directorio construido al iniciar
+
+El directorio `slot_id -> shard` se construye al iniciar leyendo los slots existentes de cada shard. Si en el futuro se crean slots en caliente, se necesitará refrescar ese directorio o persistir la metadata de routing.
+
 ---
 
 ## 11. Evidencia de funcionamiento
-
-> Pendiente para sharding. Esta sección ya registra evidencia baseline del backend actual antes de implementar sharding.
 
 ### Evidencia baseline previa a sharding
 
@@ -446,7 +455,7 @@ Pruebas REST realizadas:
 | Consulta de agenda por médico | `200 OK` |
 | Crear reserva | `502`, falla en `HoldSlot` con `DeadlineExceeded` |
 
-Nota relevante: el README menciona `start_date`/`end_date`, pero el handler actual exige `from_date`/`to_date`.
+Nota relevante: el README fue actualizado para usar `from_date`/`to_date`, que son los parámetros aceptados por el handler actual.
 
 La falla inicial de `POST /bookings` quedó registrada como problema baseline previo a sharding. El diagnóstico mostró que el slot fijo del README estaba `held` por datos persistidos antiguos y que `availability-service` no persistía `booking_id`/`held_until` al hacer `HoldSlot`.
 
@@ -474,33 +483,69 @@ Esta corrección es relevante para sharding porque el directorio `slot_id -> sha
 
 ### Evidencia esperada después de implementar sharding
 
-Evidencia esperada:
+Evidencia ejecutada:
 
 ```bash
+docker compose up -d --build booking-service api-gateway
 docker compose ps
+cd availability-service && go test ./...
+cd ../booking-service && go test ./...
+docker compose config
 ```
 
-Debe mostrar `availability-service` y al menos dos shards de availability.
-
-Logs esperados:
+El stack muestra `availability-service` y dos shards de availability:
 
 ```text
-sharding: doctor_id=... partition=... shard=...
-sharding: scatter/gather specialty=... shards=2
-sharding: slot_id=... routed_by_directory shard=...
+availability-db-shard-0
+availability-db-shard-1
+availability-service
+api-gateway
+booking-service
+auth-service
+payment-service
+```
+
+Logs observados:
+
+```text
+availability-service iniciando en modo sharded: particiones=16 shards_físicos=2 names=[shard0 shard1] shards_enrutados=[shard0 shard1]
+shard "shard1" aportó 1 slots al directorio
+shard "shard0" aportó 2 slots al directorio
+directorio de slots sharded construido con 3 entradas
+ShardedRepository listo: shards=2 entradas_directorio=3
+```
+
+Pruebas finales:
+
+| Flujo | Resultado |
+|---|---|
+| `GET /availability/slots` por Traumatología | `200 OK` |
+| `POST /bookings` con slot de Traumatología | `201 Created`, `PENDING_PAYMENT` |
+| `PATCH /bookings/{id}/cancel` | `200 OK`, `CANCELLED` |
+| Consulta directa en `availability-db-shard-0` | slot vuelve a `available` |
+| Caso borde: insert duplicado en `booking_db` después de `HoldSlot` | error controlado y slot queda `available` por compensación |
+
+Distribución demo validada:
+
+```text
+doctor_id 7e0d2ab1... Cardiología      -> partición 2  -> shard0
+doctor_id d2f50707... Traumatología    -> partición 7  -> shard0
+doctor_id 4f1cb247... Medicina interna -> partición 12 -> shard1
 ```
 
 ---
 
 ## 12. Guion breve para video de 3 minutos
 
-> Mi bloque es Sharding y lo apliqué al diseño de `availability-service`, porque la disponibilidad médica se agrupa naturalmente por médico. No se shardea todo MedConnect porque la rúbrica pide que el bloque funcione dentro del sistema real, no que todos los servicios estén particionados.
+> Mi bloque es Sharding y lo apliqué en `availability-service`, porque la disponibilidad médica se agrupa naturalmente por médico. No se shardea todo MedConnect porque la rúbrica pide que el bloque funcione dentro del sistema real, no que todos los servicios estén particionados.
 >
 > La shard key elegida es `doctor_id`. Esto permite que la agenda completa de un médico viva en un solo shard. Para evitar el problema de `hash(key) % número_de_shards`, propuse usar particiones lógicas fijas y un `partitionMap`.
 >
 > Las consultas por agenda médica van directo a un shard. Las consultas por especialidad usan scatter/gather, porque la especialidad no es la shard key. Para operaciones que solo reciben `slot_id`, como bloquear o confirmar un slot, el diseño usa un directorio `slot_id -> shard`.
 >
-> Las principales limitaciones son los hot spots por médicos muy demandados, el costo de scatter/gather y que el directorio se vuelve metadata crítica. Aun así, el diseño es coherente con el backend actual y prepara una implementación demostrable con múltiples shards, routing y fallos controlados.
+> En la demo se levantan dos PostgreSQL de availability. `availability-service` construye al iniciar un directorio de slots, consulta un shard específico para agenda por médico y usa scatter/gather para búsquedas por especialidad. También se validó que una reserva puede bloquear y liberar un slot shardeado desde el flujo real del API Gateway.
+>
+> Las principales limitaciones son los hot spots por médicos muy demandados, el costo de scatter/gather, que el directorio se construye al iniciar y que no hay rebalanceo automático. Aun así, la implementación demuestra distribución de datos, routing y manejo de fallos coherente con el backend actual.
 
 ---
 
@@ -512,4 +557,4 @@ sharding: slot_id=... routed_by_directory shard=...
 | Decisiones técnicas | Se documenta shard key, estrategia de particiones y alternativas descartadas |
 | Comportamiento ante fallos | Se describen shard caído, scatter/gather fallido, directorio inconsistente y partition map inválido |
 | Trade-offs y limitaciones | Se reconocen hot spots, scatter/gather, directorio crítico y falta de rebalanceo automático |
-| Coherencia implementación-documento | Pendiente de validar cuando se implemente |
+| Coherencia implementación-documento | Shard key, routing, directorio y scatter/gather coinciden con el código validado |

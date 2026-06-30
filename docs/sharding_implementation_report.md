@@ -2,7 +2,7 @@
 
 **Bloque individual:** Sharding  
 **Servicio objetivo:** `availability-service`  
-**Estado actual:** baseline inicial revisado; sharding aún no implementado  
+**Estado actual:** sharding implementado y validado en backend local  
 **Base:** `docs/sharding_plan.md`, `rubrica_entrega2.md`, `README.md`, `AGENTS.md`  
 **Última actualización:** 2026-06-29
 
@@ -12,7 +12,7 @@
 
 Este documento registra el avance real de la implementación de Sharding en MedConnect backend. Debe reflejar solo lo efectivamente realizado: pasos ejecutados, comandos usados, resultados obtenidos, decisiones tomadas, problemas encontrados y pendientes.
 
-> Importante: por ahora Sharding no está implementado. Este reporte parte como bitácora inicial y se irá actualizando en cada paso.
+> Este reporte registra el estado real del backend: `availability-service` puede iniciar en modo single DB o en modo sharded con dos PostgreSQL de availability.
 
 ---
 
@@ -35,8 +35,8 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 |---|---|---|
 | Verificar baseline backend antes de tocar código | `sharding-verifier` | Completado parcialmente |
 | Diseñar estructura de reporte y documento técnico | `sharding-documenter` | Completado |
-| Implementar cambios backend controlados | `sharding-implementer` | Pendiente |
-| Validar build, tests, Docker y flujo backend | `sharding-verifier` | Pendiente por cada paso |
+| Implementar cambios backend controlados | `sharding-implementer` | Completado |
+| Validar build, tests, Docker y flujo backend | `sharding-verifier` | Completado para flujo principal |
 | Mantener coherencia con rúbrica y video | `sharding-documenter` | En curso |
 
 ---
@@ -80,6 +80,11 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 | 2026-06-29 | Conexión en arranque | Modificar `availability-service/main.go` | `buildRepository` selecciona single DB o sharded según configuración | Completado |
 | 2026-06-29 | Directorio real de slots | Agregar `PostgresRepository.ListSlotIDs` | El directorio `slot_id -> shard` se construye al iniciar consultando cada shard | Completado |
 | 2026-06-29 | Tests arranque sharded | `cd availability-service && go test ./...` | PASS | Completado |
+| 2026-06-29 | Infraestructura sharded | `docker-compose.yml` + seeds por shard | Se agregan `availability-db-shard-0` y `availability-db-shard-1` | Completado |
+| 2026-06-29 | Rebuild backend sharded | `docker compose up -d --build booking-service api-gateway` | Stack inicia con `availability-service` en modo sharded | Completado |
+| 2026-06-29 | Verificación sharded | `POST /bookings` + `PATCH /bookings/{id}/cancel` | Reserva shardeada retorna `201`, cancelación `200`, slot vuelve a `available` | Completado |
+| 2026-06-29 | Caso borde booking | Falla de insert tras `HoldSlot` | `booking-service` compensa con `ReleaseHeldSlot` y no deja slot retenido | Completado |
+| 2026-06-29 | Tests finales | `go test ./...` en `availability-service` y `booking-service`; `docker compose config` | PASS / OK | Completado |
 
 ---
 
@@ -89,9 +94,9 @@ Este documento registra el avance real de la implementación de Sharding en MedC
 - Docker está disponible.
 - El stack backend fue levantado posteriormente y quedó activo.
 - Antes de levantar el stack había contenedores antiguos detenidos del proyecto.
-- `docker-compose.yml` todavía define una sola base de disponibilidad: `availability-db`.
 - `availability-service/main.go` ya selecciona entre modo single DB y modo sharded según configuración.
-- La configuración `AVAILABILITY_SHARDING_*` ya está conectada al arranque del servicio, aunque Docker Compose aún no define shards reales.
+- `docker-compose.yml` define dos shards reales de disponibilidad: `availability-db-shard-0` y `availability-db-shard-1`.
+- La configuración `AVAILABILITY_SHARDING_*` está conectada al arranque del servicio y a Docker Compose.
 - El stack backend fue levantado con `docker compose up -d --build api-gateway`.
 - `docker compose ps` mostró servicios backend activos y DBs healthy.
 - `availability-service/modules/config/config.go` mantiene compatibilidad con:
@@ -160,7 +165,7 @@ POST /auth/login    -> 200
 
 ### Disponibilidad
 
-El README usa `start_date`/`end_date`, pero el handler actual de `api-gateway` exige `from_date`/`to_date`.
+El README fue actualizado para usar `from_date`/`to_date`, que son los parámetros aceptados por el handler actual de `api-gateway`.
 
 Consulta válida:
 
@@ -276,9 +281,9 @@ Traumatología    -> available
 
 ---
 
-## 9. Comandos pendientes para baseline E2E
+## 9. Comandos operativos para verificación E2E
 
-Estos comandos aún no se ejecutaron en esta etapa para evitar modificar estado o borrar volúmenes sin necesidad.
+Estos comandos se usan para preparar, levantar, inspeccionar o resetear el backend durante la verificación de sharding.
 
 ### Preparar entorno local
 
@@ -309,14 +314,12 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 
 ---
 
-## 10. Riesgos actuales antes de integrar shards reales
+## 10. Riesgos actuales después de integrar shards reales
 
-1. `docker-compose.yml` todavía tiene una sola DB de disponibilidad; falta crear `availability-db-shard-0` y `availability-db-shard-1`.
-2. El directorio `slot_id -> shard` se construye solo al iniciar; si se crean slots nuevos en caliente, no aparecerán hasta reiniciar o refrescar el directorio.
-3. Falta validar el modo sharded con PostgreSQL reales porque aún no existe infraestructura Compose de shards.
-4. Tests de `api-gateway` fallan por autenticación requerida en pruebas preexistentes.
-5. El slot fijo del README está `held` por datos persistidos antiguos; para pruebas repetibles conviene usar slots disponibles o resetear volúmenes.
-6. README y handler difieren en nombres de query params para disponibilidad: README usa `start_date`/`end_date`; el código exige `from_date`/`to_date`.
+1. El directorio `slot_id -> shard` se construye solo al iniciar; si se crean slots nuevos en caliente, no aparecerán hasta reiniciar o refrescar el directorio.
+2. Tests de `api-gateway` fallan por autenticación requerida en pruebas preexistentes.
+3. En volúmenes antiguos puede quedar un slot del README con booking `PENDING_PAYMENT`; para demo limpia conviene usar `docker compose down -v` antes de reconstruir.
+4. Tras rebuild puede aparecer un primer timeout transitorio por conexiones gRPC frías; el retry posterior respondió correctamente.
 
 ---
 
@@ -332,7 +335,9 @@ Usar este comando solo cuando sea necesario, porque borra volúmenes.
 - [x] Actualizar este reporte con comandos, resultados y decisiones.
 - [x] Actualizar `docs/sharding_technical_doc.md` con evidencia relevante.
 - [x] Conectar `main.go` para construir `ShardedRepository` cuando sharding esté habilitado.
-- [ ] Crear infraestructura Docker Compose con dos shards de availability.
+- [x] Crear infraestructura Docker Compose con dos shards de availability.
+- [x] Validar flujo REST real con sharding habilitado.
+- [ ] Preparar documento final y guion de video de 3 minutos.
 
 ---
 
@@ -556,3 +561,113 @@ Casos cubiertos por tests nuevos:
 - propagación de error al listar slots de un shard.
 
 Riesgo pendiente: el directorio se construye solo al iniciar. Si en el futuro existen endpoints para crear slots dinámicamente, habrá que refrescar el directorio o persistir la metadata en una tabla dedicada.
+
+---
+
+## 16. Infraestructura Docker Compose con shards reales
+
+Se extendió la infraestructura local para que `availability-service` use dos bases PostgreSQL físicas cuando `AVAILABILITY_SHARDING_ENABLED=true`.
+
+Archivos modificados/creados:
+
+```text
+docker-compose.yml
+.env.example
+availability-service/db/seed_shard0.sql
+availability-service/db/seed_shard1.sql
+```
+
+Distribución demo:
+
+```text
+availability-db-shard-0 -> Cardiología, Traumatología
+availability-db-shard-1 -> Medicina interna
+```
+
+Configuración efectiva:
+
+```env
+AVAILABILITY_SHARDING_ENABLED=true
+AVAILABILITY_PARTITION_COUNT=16
+AVAILABILITY_SHARDS=shard0,shard1
+AVAILABILITY_PARTITION_MAP=0:shard0,...,7:shard0,8:shard1,...,15:shard1
+```
+
+Logs relevantes al iniciar:
+
+```text
+availability-service iniciando en modo sharded: particiones=16 shards_físicos=2 names=[shard0 shard1] shards_enrutados=[shard0 shard1]
+shard "shard1" aportó 1 slots al directorio
+shard "shard0" aportó 2 slots al directorio
+directorio de slots sharded construido con 3 entradas
+ShardedRepository listo: shards=2 entradas_directorio=3
+```
+
+---
+
+## 17. Caso borde corregido en `booking-service`
+
+Durante la verificación sharded se detectó un borde de consistencia: `booking-service` primero bloquea el slot en availability y después inserta la reserva en `booking_db`. Si el insert falla, el slot podía quedar `held` sin una reserva persistida.
+
+Corrección aplicada:
+
+```text
+si HoldSlot OK y repo.CreateBooking falla:
+  -> ReleaseHeldSlot(slot_id, booking_id)
+  -> retornar el error original de repo.CreateBooking
+```
+
+Archivos modificados:
+
+```text
+booking-service/internal/service/service.go
+booking-service/internal/service/service_test.go
+```
+
+Test agregado:
+
+```text
+TestCreateBookingReleasesHeldSlotWhenRepositoryCreateFails
+```
+
+Evidencia REST del caso borde:
+
+```text
+POST /bookings sobre slot con booking activo previo -> 502 por unique constraint en booking_db
+consulta posterior en shard0 -> slot queda available, sin booking_id ni held_until
+```
+
+Este cambio no shardea `booking-service`; solo protege el flujo real que usa availability sharded.
+
+---
+
+## 18. Verificación final sharded
+
+Comandos ejecutados:
+
+```bash
+docker compose up -d --build booking-service api-gateway
+cd availability-service && go test ./...
+cd ../booking-service && go test ./...
+docker compose config
+```
+
+Resultados:
+
+| Verificación | Resultado |
+|---|---|
+| `availability-service` tests | PASS |
+| `booking-service` tests | PASS |
+| `docker compose config` | OK |
+| `GET /availability/slots?specialty=Traumatología&from_date=...&to_date=...` | `200 OK` |
+| `POST /bookings` con slot de Traumatología | `201 Created` |
+| `PATCH /bookings/{id}/cancel` | `200 OK` |
+| Estado final del slot en shard0 | `available` |
+
+Resultado representativo:
+
+```text
+create_booking_trauma -> 201, status=PENDING_PAYMENT
+cancel_booking_trauma -> 200, status=CANCELLED
+availability-db-shard-0 -> slot Traumatología available
+```
