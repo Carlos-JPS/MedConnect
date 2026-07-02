@@ -33,6 +33,47 @@ services:
     networks:
       - medconnect_internal
 
+  kafka:
+    image: apache/kafka:4.2.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - medconnect_internal
+
+  kafka-init:
+    image: apache/kafka:4.2.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic medconnect.booking.events.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic medconnect.booking.events.dlq.v1 --partitions 1 --replication-factor 1 --config retention.ms=1209600000
+    networks:
+      - medconnect_internal
+
   booking-service:
     build:
       context: .
@@ -184,6 +225,7 @@ volumes:
   booking_db_data:
   payments_db_data:
   auth_db_data:
+  kafka_data:
 
 networks:
   medconnect_internal:
