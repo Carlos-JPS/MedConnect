@@ -119,6 +119,43 @@ services:
     networks:
       - medconnect_internal
 
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    environment:
+      NOTIFICATION_DB_DSN: ${NOTIFICATION_DB_DSN:-postgres://notification:notification_password@notification_db:5432/notification_db?sslmode=disable}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      BOOKING_EVENTS_TOPIC: ${BOOKING_EVENTS_TOPIC:-medconnect.booking.events.v1}
+      BOOKING_EVENTS_DLQ_TOPIC: ${BOOKING_EVENTS_DLQ_TOPIC:-medconnect.booking.events.dlq.v1}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-medconnect-notification-service-v1}
+      NOTIFICATION_RETRY_LIMIT: ${NOTIFICATION_RETRY_LIMIT:-3}
+      NOTIFICATION_LOG_ENABLED: ${NOTIFICATION_LOG_ENABLED:-true}
+    depends_on:
+      notification_db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - medconnect_internal
+
+  notification_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:-notification_db}
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_password}
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+      - ./notification-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER:-notification} -d ${NOTIFICATION_DB_NAME:-notification_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medconnect_internal
+
   payment-service:
     build:
       context: ./payment-service
@@ -234,6 +271,7 @@ volumes:
   payments_db_data:
   auth_db_data:
   kafka_data:
+  notification_db_data:
 
 networks:
   medconnect_internal:
