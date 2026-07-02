@@ -12,7 +12,8 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db                 *sql.DB
+	bookingEventsTopic string
 }
 
 func Open(dsn string) (*Repository, error) {
@@ -35,7 +36,13 @@ func Open(dsn string) (*Repository, error) {
 }
 
 func NewRepositoryFromDB(db *sql.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{db: db, bookingEventsTopic: defaultBookingEventsTopic}
+}
+
+func (r *Repository) SetBookingEventsTopic(topic string) {
+	if topic != "" {
+		r.bookingEventsTopic = topic
+	}
 }
 
 func (r *Repository) Close() error {
@@ -91,6 +98,10 @@ VALUES ($1, $2, $3, $4, $5)`,
 	)
 	if err != nil {
 		return service.Booking{}, fmt.Errorf("insertar appointment_event: %w", err)
+	}
+
+	if err := r.insertOutboxEvent(ctx, tx, booking, event); err != nil {
+		return service.Booking{}, fmt.Errorf("insertar outbox_event: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -211,6 +222,10 @@ VALUES ($1, $2, $3, $4, $5)`,
 		)
 		if err != nil {
 			return service.Booking{}, fmt.Errorf("insertar appointment_event de update: %w", err)
+		}
+
+		if err := r.insertOutboxEvent(ctx, tx, booking, input.Event); err != nil {
+			return service.Booking{}, fmt.Errorf("insertar outbox_event de update: %w", err)
 		}
 	}
 

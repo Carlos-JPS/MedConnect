@@ -85,6 +85,13 @@ services:
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      BOOKING_EVENTS_TOPIC: ${BOOKING_EVENTS_TOPIC:-medconnect.booking.events.v1}
+      OUTBOX_DISPATCHER_ENABLED: ${OUTBOX_DISPATCHER_ENABLED:-true}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-50}
+      OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-500ms}
+      OUTBOX_RETRY_INITIAL_DELAY: ${OUTBOX_RETRY_INITIAL_DELAY:-1s}
+      OUTBOX_RETRY_MAX_DELAY: ${OUTBOX_RETRY_MAX_DELAY:-30s}
     expose:
       - "${BOOKING_SERVICE_PORT:-50051}"
     depends_on:
@@ -103,6 +110,7 @@ services:
       - booking_db_data:/var/lib/postgresql/data
       - ./booking-service/migrations/000001_create_booking_tables.up.sql:/docker-entrypoint-initdb.d/001_create_booking_tables.sql:ro
       - ./booking-service/migrations/000002_allow_rebooking_cancelled_slots.up.sql:/docker-entrypoint-initdb.d/002_allow_rebooking_cancelled_slots.sql:ro
+      - ./booking-service/migrations/000003_create_outbox_events.up.sql:/docker-entrypoint-initdb.d/003_create_outbox_events.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${BOOKING_DB_USER:-booking} -d ${BOOKING_DB_NAME:-booking_db}"]
       interval: 5s
