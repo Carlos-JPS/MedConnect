@@ -671,3 +671,45 @@ create_booking_trauma -> 201, status=PENDING_PAYMENT
 cancel_booking_trauma -> 200, status=CANCELLED
 availability-db-shard-0 -> slot Traumatología available
 ```
+
+---
+
+## 19. Verificación de fallo de shard
+
+Se validó el comportamiento ante la caída de un shard físico, usando `availability-db-shard-1`.
+
+Comando ejecutado para simular la falla:
+
+```bash
+docker compose stop availability-db-shard-1
+```
+
+Resultados observados:
+
+| Verificación | Resultado |
+|---|---|
+| Agenda de médico en `shard0` sano | `200 OK` |
+| Agenda de médico en `shard1` caído | `500`, falla explícita contra el shard caído |
+| `GetAvailableSlots` con scatter/gather | `500`, falla completa por error en `shard1` |
+| `HoldSlot` sobre slot en `shard0` sano | `200 OK` |
+| `ReleaseHeldSlot` sobre el mismo slot en `shard0` | `200 OK`, vuelve a `available` |
+| `HoldSlot` sobre slot en `shard1` caído | `500`, falla explícita contra el shard caído |
+
+Esto confirma dos comportamientos esperados del diseño:
+
+1. Las operaciones directas a un shard sano pueden seguir funcionando aunque otro shard esté caído.
+2. Las consultas scatter/gather fallan completas si un shard no responde, evitando devolver resultados parciales como si fueran completos.
+
+Comando ejecutado para recuperar el shard:
+
+```bash
+docker compose start availability-db-shard-1
+```
+
+Verificación posterior:
+
+| Verificación | Resultado |
+|---|---|
+| Agenda de médico en `shard1` recuperado | `200 OK` |
+| `GetAvailableSlots` con scatter/gather | `200 OK` |
+| `docker compose ps` | ambos shards aparecen `Up` y `healthy` |

@@ -533,6 +533,33 @@ doctor_id d2f50707... Traumatología    -> partición 7  -> shard0
 doctor_id 4f1cb247... Medicina interna -> partición 12 -> shard1
 ```
 
+### Evidencia de fallo de shard
+
+Se simuló la caída de `availability-db-shard-1`:
+
+```bash
+docker compose stop availability-db-shard-1
+```
+
+Resultados relevantes:
+
+| Flujo | Resultado |
+|---|---|
+| Agenda de médico ubicado en `shard0` | `200 OK` |
+| Agenda de médico ubicado en `shard1` | Error explícito contra el shard caído |
+| `GetAvailableSlots` por especialidad | Falla completa porque scatter/gather no puede consultar todos los shards |
+| `HoldSlot` en slot de `shard0` | `200 OK` |
+| `ReleaseHeldSlot` en slot de `shard0` | `200 OK` |
+| `HoldSlot` en slot de `shard1` | Error explícito contra el shard caído |
+
+Después se recuperó el shard:
+
+```bash
+docker compose start availability-db-shard-1
+```
+
+La agenda del médico en `shard1` y la consulta scatter/gather volvieron a responder `200 OK`. Esta prueba confirma la degradación parcial esperada: las rutas dirigidas a shards sanos pueden continuar, mientras que las rutas que dependen del shard caído fallan de forma visible.
+
 ---
 
 ## 12. Guion breve para video de 3 minutos
