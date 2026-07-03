@@ -346,6 +346,7 @@ Si un médico pertenece a un shard caído:
 - la consulta de su agenda falla;
 - no se consulta otro shard;
 - médicos ubicados en shards sanos pueden seguir funcionando.
+- el API Gateway expone el fallo como `503 Service Unavailable`.
 
 Esto permite degradación parcial.
 
@@ -355,6 +356,7 @@ Si `GetAvailableSlots` necesita consultar todos los shards y uno falla:
 
 - la consulta completa debe fallar;
 - no se devuelven resultados parciales como si fueran completos.
+- el API Gateway expone el fallo como `503 Service Unavailable`.
 
 Motivo: el contrato actual no distingue respuestas parciales.
 
@@ -546,11 +548,13 @@ Resultados relevantes:
 | Flujo | Resultado |
 |---|---|
 | Agenda de médico ubicado en `shard0` | `200 OK` |
-| Agenda de médico ubicado en `shard1` | Error explícito contra el shard caído |
-| `GetAvailableSlots` por especialidad | Falla completa porque scatter/gather no puede consultar todos los shards |
+| Agenda de médico ubicado en `shard1` | `503 Service Unavailable` |
+| `GetAvailableSlots` por especialidad | `503 Service Unavailable`, porque scatter/gather no puede consultar todos los shards |
 | `HoldSlot` en slot de `shard0` | `200 OK` |
 | `ReleaseHeldSlot` en slot de `shard0` | `200 OK` |
-| `HoldSlot` en slot de `shard1` | Error explícito contra el shard caído |
+| `HoldSlot` en slot de `shard1` | `503 Service Unavailable` |
+
+También se validó que una reserva duplicada sobre un slot con booking activo retorna `409 Conflict` y que la compensación deja el slot en `available` si el insert de booking falla después de `HoldSlot`.
 
 Después se recuperó el shard:
 

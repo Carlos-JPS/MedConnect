@@ -14,11 +14,15 @@ import (
 
 type fakeBookingService struct {
 	booking   service.Booking
+	createErr error
 	cancelErr error
 	lastID    string
 }
 
 func (f *fakeBookingService) CreateBooking(_ context.Context, input service.CreateBookingInput) (service.Booking, error) {
+	if f.createErr != nil {
+		return service.Booking{}, f.createErr
+	}
 	return service.Booking{
 		PatientID: input.PatientID,
 		DoctorID:  input.DoctorID,
@@ -113,6 +117,19 @@ func TestCancelBookingMapsInvalidStateToFailedPrecondition(t *testing.T) {
 	server := NewServer(svc)
 
 	_, err := server.CancelBooking(context.Background(), &pb.CancelBookingRequest{BookingId: "booking-1"})
+
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %s: %v", status.Code(err), err)
+	}
+}
+
+func TestCreateBookingMapsActiveSlotBookingExistsToFailedPrecondition(t *testing.T) {
+	svc := &fakeBookingService{
+		createErr: fmt.Errorf("%w: slot-1", service.ErrActiveSlotBookingExists),
+	}
+	server := NewServer(svc)
+
+	_, err := server.CreateBooking(context.Background(), &pb.CreateBookingRequest{PatientId: "patient-1", DoctorId: "doctor-1", SlotId: "slot-1"})
 
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("expected FailedPrecondition, got %s: %v", status.Code(err), err)

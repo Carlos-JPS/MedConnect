@@ -212,6 +212,8 @@ func timestampPtr(value *time.Time) *timestamppb.Timestamp {
 
 func mapServiceError(err error) error {
 	switch {
+	case errors.Is(err, service.ErrActiveSlotBookingExists):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, service.ErrInvalidBookingState):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, service.ErrExternalDependency):

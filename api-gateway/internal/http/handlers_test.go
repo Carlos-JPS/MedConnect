@@ -17,6 +17,7 @@ import (
 
 type fakeBookingClient struct {
 	createReq  *pb.CreateBookingRequest
+	createErr  error
 	getReq     *pb.GetBookingRequest
 	listReq    *pb.ListBookingsByPatientRequest
 	cancelReq  *pb.CancelBookingRequest
@@ -26,6 +27,9 @@ type fakeBookingClient struct {
 
 func (c *fakeBookingClient) CreateBooking(_ context.Context, req *pb.CreateBookingRequest) (*pb.CreateBookingResponse, error) {
 	c.createReq = req
+	if c.createErr != nil {
+		return nil, c.createErr
+	}
 	return &pb.CreateBookingResponse{
 		BookingId:     "booking-1",
 		Status:        pb.BookingStatus_BOOKING_STATUS_PENDING_PAYMENT,
@@ -276,6 +280,26 @@ func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	}
 	if client.confirmReq.GetPaymentId() != "payment-1" {
 		t.Fatalf("expected payment id to be forwarded")
+	}
+}
+
+func TestWriteGRPCErrorMapsUnavailableToServiceUnavailable(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeGRPCError(rec, status.Error(codes.Unavailable, "availability-service no disponible"))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWriteGRPCErrorMapsFailedPreconditionToConflict(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeGRPCError(rec, status.Error(codes.FailedPrecondition, "ya existe una reserva activa para el slot"))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -633,7 +633,7 @@ TestCreateBookingReleasesHeldSlotWhenRepositoryCreateFails
 Evidencia REST del caso borde:
 
 ```text
-POST /bookings sobre slot con booking activo previo -> 502 por unique constraint en booking_db
+POST /bookings sobre slot con booking activo previo -> 409 por reserva activa duplicada en booking_db
 consulta posterior en shard0 -> slot queda available, sin booking_id ni held_until
 ```
 
@@ -689,11 +689,11 @@ Resultados observados:
 | Verificación | Resultado |
 |---|---|
 | Agenda de médico en `shard0` sano | `200 OK` |
-| Agenda de médico en `shard1` caído | `500`, falla explícita contra el shard caído |
-| `GetAvailableSlots` con scatter/gather | `500`, falla completa por error en `shard1` |
+| Agenda de médico en `shard1` caído | `503`, falla explícita contra el shard caído |
+| `GetAvailableSlots` con scatter/gather | `503`, falla completa por error en `shard1` |
 | `HoldSlot` sobre slot en `shard0` sano | `200 OK` |
 | `ReleaseHeldSlot` sobre el mismo slot en `shard0` | `200 OK`, vuelve a `available` |
-| `HoldSlot` sobre slot en `shard1` caído | `500`, falla explícita contra el shard caído |
+| `HoldSlot` sobre slot en `shard1` caído | `503`, falla explícita contra el shard caído |
 
 Esto confirma dos comportamientos esperados del diseño:
 

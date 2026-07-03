@@ -125,8 +125,9 @@ type PaymentDetails struct {
 }
 
 var (
-	ErrExternalDependency  = errors.New("fallo en dependencia externa")
-	ErrInvalidBookingState = errors.New("estado de reserva invalido")
+	ErrExternalDependency      = errors.New("fallo en dependencia externa")
+	ErrInvalidBookingState     = errors.New("estado de reserva invalido")
+	ErrActiveSlotBookingExists = errors.New("ya existe una reserva activa para el slot")
 )
 
 type AvailabilityClient interface {
