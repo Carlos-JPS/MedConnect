@@ -38,6 +38,24 @@ services:
     networks:
       - medconnect_internal
 
+  alloy:
+    image: grafana/alloy:v1.7.4
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    volumes:
+      - alloy_data:/var/lib/alloy
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - medconnect_internal
+
   api-gateway:
     build:
       context: .
@@ -257,6 +275,7 @@ volumes:
   availability-db-shard-0-data:
   availability-db-shard-1-data:
   booking_db_data:
+  alloy_data:
   grafana_data:
   loki_data:
   prometheus_data:
