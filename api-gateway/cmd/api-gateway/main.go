@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/MedConnect/api-gateway/internal/config"
-	availabilityclient "github.com/MedConnect/api-gateway/internal/grpc/availability"
 	authclient "github.com/MedConnect/api-gateway/internal/grpc/auth"
+	availabilityclient "github.com/MedConnect/api-gateway/internal/grpc/availability"
 	bookingclient "github.com/MedConnect/api-gateway/internal/grpc/booking"
 	paymentclient "github.com/MedConnect/api-gateway/internal/grpc/payment"
 	httpapi "github.com/MedConnect/api-gateway/internal/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -42,10 +43,14 @@ func main() {
 	}
 	defer authClient.Close()
 
-	handler := withTimeout(httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient), cfg.RequestTimeout)
+	gatewayHandler := httpapi.MetricsMiddleware(httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient))
+	handler := withTimeout(gatewayHandler, cfg.RequestTimeout)
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", handler)
 	server := &http.Server{
 		Addr:    net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort),
-		Handler: handler,
+		Handler: mux,
 	}
 
 	log.Printf("api-gateway escuchando en %s", server.Addr)
