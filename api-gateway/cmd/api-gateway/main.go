@@ -43,8 +43,11 @@ func main() {
 	}
 	defer authClient.Close()
 
-	gatewayHandler := httpapi.MetricsMiddleware(httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient))
-	handler := withTimeout(gatewayHandler, cfg.RequestTimeout)
+	var handler http.Handler = httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient)
+	handler = httpapi.MetricsMiddleware(handler)
+	handler = httpapi.LoggingMiddleware(handler)
+	handler = httpapi.RequestIDMiddleware(handler)
+	handler = withTimeout(handler, cfg.RequestTimeout)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", handler)
