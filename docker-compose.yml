@@ -27,6 +27,17 @@ services:
     networks:
       - medconnect_internal
 
+  loki:
+    image: grafana/loki:3.2.1
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - loki_data:/loki
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    networks:
+      - medconnect_internal
+
   api-gateway:
     build:
       context: .
@@ -247,6 +258,7 @@ volumes:
   availability-db-shard-1-data:
   booking_db_data:
   grafana_data:
+  loki_data:
   prometheus_data:
   payments_db_data:
   auth_db_data:
