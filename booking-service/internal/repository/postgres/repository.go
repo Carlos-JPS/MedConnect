@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/MedConnect/booking-service/internal/service"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 type Repository struct {
@@ -83,6 +83,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		nullableTime(booking.CancelledAt),
 	)
 	if err != nil {
+		if isActiveSlotConflict(err) {
+			return service.Booking{}, fmt.Errorf("%w: %s", service.ErrActiveSlotBookingExists, booking.SlotID)
+		}
 		return service.Booking{}, fmt.Errorf("insertar appointment: %w", err)
 	}
 
@@ -110,6 +113,11 @@ VALUES ($1, $2, $3, $4, $5)`,
 	committed = true
 
 	return booking, nil
+}
+
+func isActiveSlotConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "idx_appointments_active_slot"
 }
 
 func (r *Repository) GetBooking(ctx context.Context, bookingID string) (service.Booking, error) {

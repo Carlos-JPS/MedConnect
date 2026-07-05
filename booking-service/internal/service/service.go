@@ -125,8 +125,9 @@ type PaymentDetails struct {
 }
 
 var (
-	ErrExternalDependency  = errors.New("fallo en dependencia externa")
-	ErrInvalidBookingState = errors.New("estado de reserva invalido")
+	ErrExternalDependency      = errors.New("fallo en dependencia externa")
+	ErrInvalidBookingState     = errors.New("estado de reserva invalido")
+	ErrActiveSlotBookingExists = errors.New("ya existe una reserva activa para el slot")
 )
 
 type AvailabilityClient interface {
@@ -244,7 +245,18 @@ func (s *bookingService) CreateBooking(ctx context.Context, input CreateBookingI
 		CreatedAt: now,
 	}
 
-	return s.repo.CreateBooking(ctx, booking, event)
+	createdBooking, err := s.repo.CreateBooking(ctx, booking, event)
+	if err != nil {
+		releaseCtx, releaseCancel := s.externalContext(ctx)
+		defer releaseCancel()
+		_ = s.availability.ReleaseHeldSlot(releaseCtx, ReleaseHeldSlotInput{
+			SlotID:    input.SlotID,
+			BookingID: bookingID,
+		})
+		return Booking{}, err
+	}
+
+	return createdBooking, nil
 }
 
 func (s *bookingService) CancelBooking(ctx context.Context, input CancelBookingInput) (Booking, error) {

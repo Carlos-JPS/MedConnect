@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/MedConnect/booking-service/internal/service"
+	"github.com/lib/pq"
 )
 
 func TestCreateBookingPersistsAppointmentAndEvent(t *testing.T) {
@@ -80,6 +82,42 @@ func TestCreateBookingPersistsAppointmentAndEvent(t *testing.T) {
 	}
 	if got.BookingID != booking.BookingID {
 		t.Fatalf("expected booking id %q, got %q", booking.BookingID, got.BookingID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestCreateBookingMapsActiveSlotUniqueViolation(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("expected sqlmock db, got %v", err)
+	}
+	defer db.Close()
+
+	repo := NewRepositoryFromDB(db)
+	now := time.Date(2026, time.May, 3, 20, 0, 0, 0, time.UTC)
+	booking := service.Booking{
+		BookingID:     "booking-1",
+		PatientID:     "patient-1",
+		DoctorID:      "doctor-1",
+		SlotID:        "slot-1",
+		Status:        service.StatusPendingPayment,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		ReservedUntil: now.Add(15 * time.Minute),
+	}
+	event := service.BookingEvent{EventID: "event-1", BookingID: "booking-1", EventType: service.EventCreated, CreatedAt: now}
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO appointments")).
+		WillReturnError(&pq.Error{Code: "23505", Constraint: "idx_appointments_active_slot"})
+	mock.ExpectRollback()
+
+	_, err = repo.CreateBooking(context.Background(), booking, event)
+
+	if !errors.Is(err, service.ErrActiveSlotBookingExists) {
+		t.Fatalf("expected ErrActiveSlotBookingExists, got %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

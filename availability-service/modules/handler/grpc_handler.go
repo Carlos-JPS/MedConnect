@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/repository"
@@ -33,6 +34,17 @@ func mapSlotToProto(s *repository.Slot) *pb.Slot {
 	}
 }
 
+func availabilityError(message string, err error) error {
+	switch {
+	case errors.Is(err, repository.ErrSlotNotAvailable):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, repository.ErrSlotShardNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	default:
+		return status.Errorf(codes.Unavailable, "%s: %v", message, err)
+	}
+}
+
 func (h *GRPCHandler) GetAvailableSlots(ctx context.Context, req *pb.GetAvailableSlotsRequest) (*pb.GetAvailableSlotsResponse, error) {
 	if req.Specialty == "" || req.FromDate == "" || req.ToDate == "" {
 		return nil, status.Error(codes.InvalidArgument, "specialty, from_date and to_date are required")
@@ -47,10 +59,13 @@ func (h *GRPCHandler) GetAvailableSlots(ctx context.Context, req *pb.GetAvailabl
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid to_date format, use RFC3339")
 	}
+	if startDate.After(endDate) {
+		return nil, status.Error(codes.InvalidArgument, "from_date cannot be after to_date")
+	}
 
-	slots, err := h.svc.GetAvailableSlots(req.Specialty, startDate, endDate)
+	slots, err := h.svc.GetAvailableSlots(ctx, req.Specialty, startDate, endDate)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get slots: %v", err)
+		return nil, availabilityError("failed to get slots", err)
 	}
 
 	var pbSlots []*pb.Slot
@@ -66,16 +81,25 @@ func (h *GRPCHandler) HoldSlot(ctx context.Context, req *pb.HoldSlotRequest) (*p
 		return nil, status.Error(codes.InvalidArgument, "slot_id is required")
 	}
 
-	slot, err := h.svc.HoldSlot(req.SlotId)
+	heldUntil := time.Now().Add(15 * time.Minute)
+	if req.HeldUntil != "" {
+		parsed, err := time.Parse(time.RFC3339, req.HeldUntil)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid held_until format, use RFC3339")
+		}
+		heldUntil = parsed
+	}
+
+	slot, err := h.svc.HoldSlot(ctx, req.SlotId, req.BookingId, heldUntil)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to hold slot: %v", err)
+		return nil, availabilityError("failed to hold slot", err)
 	}
 
 	return &pb.HoldSlotResponse{
-		SlotId:     slot.ID,
-		Status:     string(slot.Status),
-		HeldUntil:  time.Now().Add(15 * time.Minute).Format(time.RFC3339), // Demo logic
-		BookingId:  req.BookingId,
+		SlotId:    slot.ID,
+		Status:    string(slot.Status),
+		HeldUntil: heldUntil.Format(time.RFC3339),
+		BookingId: req.BookingId,
 	}, nil
 }
 
@@ -84,9 +108,9 @@ func (h *GRPCHandler) ConfirmSlotBooking(ctx context.Context, req *pb.ConfirmSlo
 		return nil, status.Error(codes.InvalidArgument, "slot_id is required")
 	}
 
-	slot, err := h.svc.ConfirmSlotBooking(req.SlotId)
+	slot, err := h.svc.ConfirmSlotBooking(ctx, req.SlotId, req.BookingId)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to confirm slot: %v", err)
+		return nil, availabilityError("failed to confirm slot", err)
 	}
 
 	return &pb.ConfirmSlotBookingResponse{
@@ -101,9 +125,9 @@ func (h *GRPCHandler) ReleaseHeldSlot(ctx context.Context, req *pb.ReleaseHeldSl
 		return nil, status.Error(codes.InvalidArgument, "slot_id is required")
 	}
 
-	slot, err := h.svc.ReleaseHeldSlot(req.SlotId)
+	slot, err := h.svc.ReleaseHeldSlot(ctx, req.SlotId, req.BookingId)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to release slot: %v", err)
+		return nil, availabilityError("failed to release slot", err)
 	}
 
 	return &pb.ReleaseHeldSlotResponse{
@@ -126,10 +150,13 @@ func (h *GRPCHandler) GetDoctorAgenda(ctx context.Context, req *pb.GetDoctorAgen
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid to_date format, use RFC3339")
 	}
+	if startDate.After(endDate) {
+		return nil, status.Error(codes.InvalidArgument, "from_date cannot be after to_date")
+	}
 
-	slots, err := h.svc.GetDoctorAgenda(req.DoctorId, startDate, endDate)
+	slots, err := h.svc.GetDoctorAgenda(ctx, req.DoctorId, startDate, endDate)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get agenda: %v", err)
+		return nil, availabilityError("failed to get agenda", err)
 	}
 
 	var pbSlots []*pb.Slot

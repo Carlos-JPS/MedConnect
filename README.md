@@ -77,13 +77,13 @@ Todos los servicios gRPC y bases de datos operan únicamente dentro de la red in
 
 ## Pruebas con Insomnia
 
-El archivo `Insomnia_2026-05-07.yaml` en la raíz del repositorio contiene todas las peticiones listas para usar.
+El archivo `Insomnia_2026-05-08.yaml` en la raíz del repositorio contiene todas las peticiones listas para usar.
 
 ### Paso 1: Importar la colección
 
 1. Abre Insomnia
 2. Ve a **File > Import**
-3. Selecciona el archivo `Insomnia_2026-05-07.yaml`
+3. Selecciona el archivo `Insomnia_2026-05-08.yaml`
 4. La colección se carga con carpetas para **Auth**, **Availability**, **Bookings** y **Payments**
 
 ### Paso 2: Configurar el entorno
@@ -257,7 +257,7 @@ curl -s -X POST http://localhost:8080/auth/login \
   -d '{"email":"paciente@test.com","password":"password123"}'
 
 # Paso 3: Consultar disponibilidad (los datos se insertan automáticamente al levantar el sistema)
-curl -s "http://localhost:8080/availability/slots?specialty=Cardiología&start_date=2026-01-01T00:00:00Z&end_date=2027-12-31T00:00:00Z"
+curl -s "http://localhost:8080/availability/slots?specialty=Cardiología&from_date=2026-01-01T00:00:00Z&to_date=2027-12-31T00:00:00Z"
 
 # Paso 4: Crear reserva (reemplaza {TOKEN} con el valor del Paso 2)
 curl -s -X POST http://localhost:8080/bookings \
@@ -303,7 +303,7 @@ MedConnect/
 ├── booking-service/                # Servicio gRPC de reservas
 ├── payment-service/                # Servicio gRPC de pagos
 ├── docker-compose.yml              # Orquestación de infraestructura
-└── Insomnia_2026-05-07.yaml        # Colección de pruebas
+└── Insomnia_2026-05-08.yaml        # Colección de pruebas
 ```
 
 ## Próximos Pasos (To-Do)

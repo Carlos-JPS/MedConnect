@@ -1,8 +1,11 @@
 package repository
 
 import (
+	"errors"
 	"time"
 )
+
+var ErrSlotNotAvailable = errors.New("slot not found or not in expected status")
 
 // SlotStatus represents the current state of a slot
 type SlotStatus string

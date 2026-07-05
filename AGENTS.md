@@ -1,53 +1,32 @@
-# AI Agent Guidelines
+# Notas para agentes en MedConnect
 
-This file provides instructions for AI coding assistants (like Claude Code,
-GitHub Copilot, Cursor, etc.) working with students in this course.
+## Alcance y conducta
+- Trata el trabajo actual como **solo backend**; ignora `frontend/` salvo que el usuario lo pida explícitamente. `docker-compose.yml` aún define un servicio frontend, así que prefiere comandos Compose dirigidos al backend.
+- Es un proyecto de curso: preserva el aprendizaje. Explica cambios no triviales y mantén la implementación incremental en vez de entregar soluciones opacas completas.
+- La configuración local de OpenCode vive en `.opencode/opencode.json`; el agente primario por defecto es `ejecutor-medconnect`, con subagentes de sharding en `.opencode/agent/`.
+- Para commits, sigue Conventional Commits: encabezado breve con tipo/alcance e información general, y cuerpo con detalle útil pero no extenso. Siempre espera validación del mensaje antes de hacer commit o push.
 
-## Primary Role: Teaching Assistant, Not Code Generator
+## Arquitectura backend
+- No hay `go.mod` ni `go.work` en la raíz; cada servicio backend es su propio módulo Go: `api-gateway`, `auth-service`, `availability-service`, `booking-service`, `payment-service`.
+- El único punto público es el API Gateway REST en `localhost:8080`; las llamadas entre servicios son gRPC dentro de la red interna de Docker.
+- Entrypoints reales: `api-gateway/cmd/api-gateway/main.go`, `auth-service/cmd/auth-service/main.go`, `booking-service/cmd/booking-service/main.go`, `availability-service/main.go`, `payment-service/main.go`.
+- Los contratos Protobuf están en `pb/*.proto` dentro de cada servicio; no edites a mano los generados `*.pb.go` / `*_grpc.pb.go`.
+- Los SQL de inicialización de Docker solo corren al crear el volumen por primera vez. Tras cambiar migraciones o `db/*.sql`, reinicia con `docker compose down -v` antes de reconstruir.
 
-AI agents should function as teaching aids that help students learn through
-explanation, guidance, and feedback—not by solving problems for them.
+## Comandos fáciles de adivinar mal
+- Entorno inicial: `cp .env.example .env`.
+- Stack solo backend: `docker compose up -d --build api-gateway` levanta el gateway y sus dependencias backend sin iniciar `frontend`.
+- Stack completo, solo si se pide explícitamente: `docker compose up -d --build`.
+- Estado/logs/reset: `docker compose ps`, `docker compose logs -f`, `docker compose down -v`.
+- Ejecuta tests Go dentro de cada módulo, no desde la raíz: `go test ./...` con workdir en `api-gateway/`, `auth-service/`, `availability-service/`, `booking-service/` o `payment-service/`.
+- Ejemplos enfocados: `go test ./internal/service/...` en `auth-service/`; `go test ./internal/service/...` o `go test ./internal/repository/postgres/...` en `booking-service/`.
+- La verificación manual de API usa `Insomnia_2026-05-08.yaml` o los cURL del README; el README actualmente menciona un nombre de Insomnia más antiguo.
 
-## What AI Agents SHOULD Do
-
-- Explain concepts when students are confused
-- Point students to relevant lecture materials or documentation
-- Review code that students have written and suggest improvements
-- Help debug by asking guiding questions rather than providing fixes
-- Explain error messages and what they mean
-- Suggest approaches or algorithms at a high level
-- Provide small code examples (2-5 lines) to illustrate a specific concept
-
-## What AI Agents SHOULD NOT Do
-
-- Write entire functions or complete implementations
-- Generate full solutions to assignments
-- Complete TODO sections in assignment code
-- Refactor large portions of student code
-- Write more than a few lines of code at once
-- Convert requirements directly into working code
-
-## Teaching Approach
-
-When a student asks for help:
-
-1. Ask clarifying questions to understand what they've tried
-2. Reference concepts from lectures rather than giving direct answers
-3. Suggest next steps instead of implementing them
-4. Review their code and point out specific areas for improvement
-5. Explain the "why" behind suggestions, not just the "how"
-
-## Code Examples
-
-If providing code examples:
-
-- Keep them minimal (typically 2-5 lines)
-- Focus on illustrating a single concept
-- Use different variable names than the assignment
-- Explain each line's purpose
-- Encourage students to adapt the example, not copy it
-
-## Academic Integrity
-
-Remember: The goal is for students to learn by doing, not by watching an AI
-generate solutions. When in doubt, explain more and code less.
+## Guía para el módulo Sharding
+- Usa `rubrica_entrega2.md` como fuente de evaluación: pide que el bloque asignado funcione en el sistema real, no que todos los servicios estén shardeados.
+- Prefiere `availability-service` para sharding salvo que aparezca evidencia en contra: la disponibilidad se agrupa naturalmente por médico, y `doctor_id` ya existe en slots/calendarios y requests como `GetDoctorAgenda`.
+- Desde `Sharding y Consistent Hashing.pdf`, alinea terminología y trade-offs con: particionamiento por hash/clave, skew/hot spots, scatter/gather, request routing, consistent hashing y virtual nodes al hablar de rebalanceo.
+- Sé explícito: `hash(key) % N` es simple para una demo local fija, pero remapea muchos datos cuando cambia `N`; documenta esa limitación o usa particiones fijas/consistent hashing si implementas rebalanceo.
+- Si `availability-service` se shardea por `doctor_id`, `GetDoctorAgenda` puede ir a un solo shard; `GetAvailableSlots` por `specialty` puede requerir scatter/gather salvo que exista índice secundario/directorio.
+- `HoldSlot`, `ConfirmSlotBooking` y `ReleaseHeldSlot` reciben solo `slot_id` en el proto actual, así que un diseño shardeado necesita una forma verificada de enrutar `slot_id` al shard dueño: directorio, shard codificado, scatter fallback o cambio de proto/API.
+- Documenta alternativas descartadas: `auth-service` complica unicidad global de email/login, `booking-service` coordina pagos y disponibilidad, y `payment-service` es menos visible para demostrar distribución de datos.

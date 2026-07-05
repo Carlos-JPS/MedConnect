@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -8,11 +9,11 @@ import (
 )
 
 type AvailabilityService interface {
-	GetAvailableSlots(specialty string, startDate, endDate time.Time) ([]*repository.Slot, error)
-	HoldSlot(slotID string) (*repository.Slot, error)
-	ConfirmSlotBooking(slotID string) (*repository.Slot, error)
-	ReleaseHeldSlot(slotID string) (*repository.Slot, error)
-	GetDoctorAgenda(doctorID string, startDate, endDate time.Time) ([]*repository.Slot, error)
+	GetAvailableSlots(ctx context.Context, specialty string, startDate, endDate time.Time) ([]*repository.Slot, error)
+	HoldSlot(ctx context.Context, slotID string, bookingID string, heldUntil time.Time) (*repository.Slot, error)
+	ConfirmSlotBooking(ctx context.Context, slotID string, bookingID string) (*repository.Slot, error)
+	ReleaseHeldSlot(ctx context.Context, slotID string, bookingID string) (*repository.Slot, error)
+	GetDoctorAgenda(ctx context.Context, doctorID string, startDate, endDate time.Time) ([]*repository.Slot, error)
 }
 
 type availabilityService struct {
@@ -25,28 +26,28 @@ func NewAvailabilityService(repo repository.AvailabilityRepository) Availability
 	}
 }
 
-func (s *availabilityService) GetAvailableSlots(specialty string, startDate, endDate time.Time) ([]*repository.Slot, error) {
+func (s *availabilityService) GetAvailableSlots(ctx context.Context, specialty string, startDate, endDate time.Time) ([]*repository.Slot, error) {
 	if startDate.After(endDate) {
 		return nil, fmt.Errorf("start date cannot be after end date")
 	}
-	return s.repo.GetAvailableSlots(specialty, startDate, endDate)
+	return s.repo.GetAvailableSlots(ctx, specialty, startDate, endDate)
 }
 
-func (s *availabilityService) HoldSlot(slotID string) (*repository.Slot, error) {
-	return s.repo.HoldSlot(slotID)
+func (s *availabilityService) HoldSlot(ctx context.Context, slotID string, bookingID string, heldUntil time.Time) (*repository.Slot, error) {
+	return s.repo.HoldSlot(ctx, slotID, bookingID, heldUntil)
 }
 
-func (s *availabilityService) ConfirmSlotBooking(slotID string) (*repository.Slot, error) {
-	return s.repo.ConfirmSlotBooking(slotID)
+func (s *availabilityService) ConfirmSlotBooking(ctx context.Context, slotID string, bookingID string) (*repository.Slot, error) {
+	return s.repo.ConfirmSlotBooking(ctx, slotID, bookingID)
 }
 
-func (s *availabilityService) ReleaseHeldSlot(slotID string) (*repository.Slot, error) {
-	return s.repo.ReleaseHeldSlot(slotID)
+func (s *availabilityService) ReleaseHeldSlot(ctx context.Context, slotID string, bookingID string) (*repository.Slot, error) {
+	return s.repo.ReleaseHeldSlot(ctx, slotID, bookingID)
 }
 
-func (s *availabilityService) GetDoctorAgenda(doctorID string, startDate, endDate time.Time) ([]*repository.Slot, error) {
+func (s *availabilityService) GetDoctorAgenda(ctx context.Context, doctorID string, startDate, endDate time.Time) ([]*repository.Slot, error) {
 	if startDate.After(endDate) {
 		return nil, fmt.Errorf("start date cannot be after end date")
 	}
-	return s.repo.GetDoctorAgenda(doctorID, startDate, endDate)
+	return s.repo.GetDoctorAgenda(ctx, doctorID, startDate, endDate)
 }

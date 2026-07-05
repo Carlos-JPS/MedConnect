@@ -198,31 +198,58 @@ services:
       dockerfile: Dockerfile
     container_name: availability-service
     environment:
-      DB_HOST: availability-db
+      DB_HOST: availability-db-shard-0
       DB_PORT: 5432
       DB_USER: ${AVAILABILITY_DB_USER:-postgres}
       DB_PASSWORD: ${AVAILABILITY_DB_PASSWORD:-postgres}
       DB_NAME: ${AVAILABILITY_DB_NAME:-availability_db}
       GRPC_PORT: ${AVAILABILITY_SERVICE_PORT:-50051}
+      AVAILABILITY_SHARDING_ENABLED: ${AVAILABILITY_SHARDING_ENABLED:-true}
+      AVAILABILITY_PARTITION_COUNT: ${AVAILABILITY_PARTITION_COUNT:-16}
+      AVAILABILITY_SHARDS: ${AVAILABILITY_SHARDS:-shard0,shard1}
+      AVAILABILITY_PARTITION_MAP: ${AVAILABILITY_PARTITION_MAP:-0:shard0,1:shard0,2:shard0,3:shard0,4:shard0,5:shard0,6:shard0,7:shard0,8:shard1,9:shard1,10:shard1,11:shard1,12:shard1,13:shard1,14:shard1,15:shard1}
+      AVAILABILITY_SHARD0_DSN: ${AVAILABILITY_SHARD0_DSN:-postgres://postgres:postgres@availability-db-shard-0:5432/availability_db?sslmode=disable}
+      AVAILABILITY_SHARD1_DSN: ${AVAILABILITY_SHARD1_DSN:-postgres://postgres:postgres@availability-db-shard-1:5432/availability_db?sslmode=disable}
     expose:
       - "${AVAILABILITY_SERVICE_PORT:-50051}"
     depends_on:
-      availability-db:
+      availability-db-shard-0:
+        condition: service_healthy
+      availability-db-shard-1:
         condition: service_healthy
     networks:
       - medconnect_internal
 
-  availability-db:
+  availability-db-shard-0:
     image: postgres:15
-    container_name: availability-db
+    container_name: availability-db-shard-0
     environment:
       POSTGRES_USER: ${AVAILABILITY_DB_USER:-postgres}
       POSTGRES_PASSWORD: ${AVAILABILITY_DB_PASSWORD:-postgres}
       POSTGRES_DB: ${AVAILABILITY_DB_NAME:-availability_db}
     volumes:
-      - availability-db-data:/var/lib/postgresql/data
+      - availability-db-shard-0-data:/var/lib/postgresql/data
       - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
-      - ./availability-service/db/002_seed_demo_slots.sql:/docker-entrypoint-initdb.d/002_seed_demo_slots.sql:ro
+      - ./availability-service/db/seed_shard0.sql:/docker-entrypoint-initdb.d/002_seed_shard0.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER:-postgres} -d ${AVAILABILITY_DB_NAME:-availability_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - medconnect_internal
+
+  availability-db-shard-1:
+    image: postgres:15
+    container_name: availability-db-shard-1
+    environment:
+      POSTGRES_USER: ${AVAILABILITY_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${AVAILABILITY_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${AVAILABILITY_DB_NAME:-availability_db}
+    volumes:
+      - availability-db-shard-1-data:/var/lib/postgresql/data
+      - ./availability-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./availability-service/db/seed_shard1.sql:/docker-entrypoint-initdb.d/002_seed_shard1.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${AVAILABILITY_DB_USER:-postgres} -d ${AVAILABILITY_DB_NAME:-availability_db}"]
       interval: 5s
@@ -266,7 +293,8 @@ services:
       - medconnect_internal
 
 volumes:
-  availability-db-data:
+  availability-db-shard-0-data:
+  availability-db-shard-1-data:
   booking_db_data:
   payments_db_data:
   auth_db_data:
