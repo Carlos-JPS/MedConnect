@@ -1,4 +1,32 @@
 services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - medconnect_internal
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - medconnect_internal
+
   api-gateway:
     build:
       context: .
@@ -210,6 +238,8 @@ volumes:
   availability-db-shard-0-data:
   availability-db-shard-1-data:
   booking_db_data:
+  grafana_data:
+  prometheus_data:
   payments_db_data:
   auth_db_data:
 
