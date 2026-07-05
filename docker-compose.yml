@@ -72,8 +72,10 @@ services:
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+      METRICS_PORT: ${BOOKING_METRICS_PORT:-9090}
     expose:
       - "${BOOKING_SERVICE_PORT:-50051}"
+      - "${BOOKING_METRICS_PORT:-9090}"
     depends_on:
       booking_db:
         condition: service_healthy
@@ -109,8 +111,10 @@ services:
       DB_PASSWORD: ${PAYMENTS_DB_PASSWORD:-postgres}
       DB_NAME: ${PAYMENTS_DB_NAME:-payments_db}
       GRPC_PORT: ${PAYMENT_SERVICE_PORT:-50051}
+      METRICS_PORT: ${PAYMENT_METRICS_PORT:-9090}
     expose:
       - "${PAYMENT_SERVICE_PORT:-50051}"
+      - "${PAYMENT_METRICS_PORT:-9090}"
     depends_on:
       payments-db:
         condition: service_healthy
@@ -152,8 +156,10 @@ services:
       AVAILABILITY_PARTITION_MAP: ${AVAILABILITY_PARTITION_MAP:-0:shard0,1:shard0,2:shard0,3:shard0,4:shard0,5:shard0,6:shard0,7:shard0,8:shard1,9:shard1,10:shard1,11:shard1,12:shard1,13:shard1,14:shard1,15:shard1}
       AVAILABILITY_SHARD0_DSN: ${AVAILABILITY_SHARD0_DSN:-postgres://postgres:postgres@availability-db-shard-0:5432/availability_db?sslmode=disable}
       AVAILABILITY_SHARD1_DSN: ${AVAILABILITY_SHARD1_DSN:-postgres://postgres:postgres@availability-db-shard-1:5432/availability_db?sslmode=disable}
+      METRICS_PORT: ${AVAILABILITY_METRICS_PORT:-9090}
     expose:
       - "${AVAILABILITY_SERVICE_PORT:-50051}"
+      - "${AVAILABILITY_METRICS_PORT:-9090}"
     depends_on:
       availability-db-shard-0:
         condition: service_healthy
@@ -209,8 +215,10 @@ services:
       AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT:-50051}
       AUTH_DB_DSN: ${AUTH_DB_DSN:-postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:-medconnect-jwt-secret-change-me}
+      METRICS_PORT: ${AUTH_METRICS_PORT:-9090}
     expose:
       - "${AUTH_SERVICE_PORT:-50051}"
+      - "${AUTH_METRICS_PORT:-9090}"
     depends_on:
       auth_db:
         condition: service_healthy

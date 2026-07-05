@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/MedConnect/auth-service/internal/observability"
 	"github.com/MedConnect/auth-service/internal/repository/postgres"
 	"github.com/MedConnect/auth-service/internal/service"
 	transport "github.com/MedConnect/auth-service/internal/transport/grpc"
@@ -58,10 +59,11 @@ func main() {
 		log.Fatalf("Error al escuchar en el puerto %s: %v", port, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	observability.StartMetricsServer("auth-service")
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.UnaryServerInterceptor("auth-service")))
 	// Registrar el servicio de autenticación en el servidor gRPC
 	pb.RegisterAuthServiceServer(grpcServer, handler)
-	
+
 	// Habilitar Reflection para que herramientas como grpcurl puedan inspeccionar el servidor
 	reflection.Register(grpcServer)
 
