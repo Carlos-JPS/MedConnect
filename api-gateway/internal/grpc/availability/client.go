@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	pb "github.com/Carlos-JPS/medconnect/availability-service/pb"
+	grpcmeta "github.com/MedConnect/api-gateway/internal/grpc/metadata"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -35,21 +36,21 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) GetAvailableSlots(ctx context.Context, req *pb.GetAvailableSlotsRequest) (*pb.GetAvailableSlotsResponse, error) {
-	return c.client.GetAvailableSlots(ctx, req)
+	return c.client.GetAvailableSlots(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) GetDoctorAgenda(ctx context.Context, req *pb.GetDoctorAgendaRequest) (*pb.GetDoctorAgendaResponse, error) {
-	return c.client.GetDoctorAgenda(ctx, req)
+	return c.client.GetDoctorAgenda(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) HoldSlot(ctx context.Context, req *pb.HoldSlotRequest) (*pb.HoldSlotResponse, error) {
-	return c.client.HoldSlot(ctx, req)
+	return c.client.HoldSlot(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) ConfirmSlotBooking(ctx context.Context, req *pb.ConfirmSlotBookingRequest) (*pb.ConfirmSlotBookingResponse, error) {
-	return c.client.ConfirmSlotBooking(ctx, req)
+	return c.client.ConfirmSlotBooking(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) ReleaseHeldSlot(ctx context.Context, req *pb.ReleaseHeldSlotRequest) (*pb.ReleaseHeldSlotResponse, error) {
-	return c.client.ReleaseHeldSlot(ctx, req)
+	return c.client.ReleaseHeldSlot(grpcmeta.ContextWithRequestID(ctx), req)
 }

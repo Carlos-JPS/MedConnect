@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -59,15 +60,18 @@ func UnaryServerInterceptor(serviceName string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		start := time.Now()
 		resp, err := handler(ctx, req)
+		duration := time.Since(start)
 		code := codes.OK.String()
 		if err != nil {
 			code = status.Code(err).String()
 		}
+		requestID := requestIDFromContext(ctx)
 
 		method := methodName(info.FullMethod)
 		labels := []string{serviceName, method, code}
 		grpcServerRequestsTotal.WithLabelValues(labels...).Inc()
-		grpcServerRequestDuration.WithLabelValues(labels...).Observe(time.Since(start).Seconds())
+		grpcServerRequestDuration.WithLabelValues(labels...).Observe(duration.Seconds())
+		log.Printf("service=%s request_id=%s method=%s code=%s duration=%s", serviceName, requestID, method, code, duration)
 		return resp, err
 	}
 }
@@ -78,4 +82,16 @@ func methodName(fullMethod string) string {
 		return "unknown"
 	}
 	return fullMethod[idx+1:]
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "unknown"
+	}
+	vals := md.Get("x-request-id")
+	if len(vals) == 0 || vals[0] == "" {
+		return "unknown"
+	}
+	return vals[0]
 }
