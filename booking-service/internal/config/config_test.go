@@ -17,6 +17,8 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	t.Setenv("OUTBOX_POLL_INTERVAL", "")
 	t.Setenv("OUTBOX_RETRY_INITIAL_DELAY", "")
 	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "")
+	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "")
+	t.Setenv("OUTBOX_MAX_ATTEMPTS", "")
 
 	cfg := Load()
 
@@ -59,6 +61,12 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	if cfg.OutboxMaxRetryDelay != 30*time.Second {
 		t.Fatalf("expected default outbox max retry delay 30s, got %s", cfg.OutboxMaxRetryDelay)
 	}
+	if cfg.OutboxClaimTimeout != 2*time.Minute {
+		t.Fatalf("expected default outbox claim timeout 2m, got %s", cfg.OutboxClaimTimeout)
+	}
+	if cfg.OutboxMaxAttempts != 10 {
+		t.Fatalf("expected default outbox max attempts 10, got %d", cfg.OutboxMaxAttempts)
+	}
 }
 
 func TestLoadUsesEnvironmentOverrides(t *testing.T) {
@@ -75,6 +83,8 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("OUTBOX_POLL_INTERVAL", "250ms")
 	t.Setenv("OUTBOX_RETRY_INITIAL_DELAY", "2s")
 	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "45s")
+	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "90s")
+	t.Setenv("OUTBOX_MAX_ATTEMPTS", "4")
 
 	cfg := Load()
 
@@ -116,5 +126,11 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.OutboxMaxRetryDelay != 45*time.Second {
 		t.Fatalf("expected env max retry delay, got %s", cfg.OutboxMaxRetryDelay)
+	}
+	if cfg.OutboxClaimTimeout != 90*time.Second {
+		t.Fatalf("expected env claim timeout, got %s", cfg.OutboxClaimTimeout)
+	}
+	if cfg.OutboxMaxAttempts != 4 {
+		t.Fatalf("expected env max attempts 4, got %d", cfg.OutboxMaxAttempts)
 	}
 }

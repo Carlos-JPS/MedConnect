@@ -74,6 +74,8 @@ func main() {
 					PollInterval:      cfg.OutboxPollInterval,
 					InitialRetryDelay: cfg.OutboxInitialRetryDelay,
 					MaxRetryDelay:     cfg.OutboxMaxRetryDelay,
+					ClaimTimeout:      cfg.OutboxClaimTimeout,
+					MaxAttempts:       cfg.OutboxMaxAttempts,
 				},
 				log.Default(),
 			)

@@ -306,11 +306,11 @@ func TestFetchPendingOutboxEvents(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "aggregate_id", "event_type", "topic", "event_key", "payload", "attempts", "created_at"}).
 		AddRow("event-1", "booking-1", "booking.created", defaultBookingEventsTopic, "booking-1", `{"event_id":"event-1"}`, 2, now)
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id::text, aggregate_id::text")).
-		WithArgs(10).
+	mock.ExpectQuery(regexp.QuoteMeta("WITH candidates AS")).
+		WithArgs(10, int64(60000)).
 		WillReturnRows(rows)
 
-	events, err := repo.FetchPendingOutboxEvents(context.Background(), 10)
+	events, err := repo.FetchPendingOutboxEvents(context.Background(), 10, time.Minute)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -339,18 +339,47 @@ func TestMarkOutboxPublishedAndFailed(t *testing.T) {
 	publishedAt := time.Date(2026, time.May, 3, 22, 5, 0, 0, time.UTC)
 	nextAttemptAt := time.Date(2026, time.May, 3, 22, 6, 0, 0, time.UTC)
 
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE outbox_events SET published_at = $2, last_error = NULL WHERE id = $1")).
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE outbox_events")).
 		WithArgs("event-1", publishedAt).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE outbox_events")).
-		WithArgs("event-2", nextAttemptAt, "kafka down").
+		WithArgs("event-2", nextAttemptAt, "kafka down", 3).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := repo.MarkOutboxPublished(context.Background(), "event-1", publishedAt); err != nil {
 		t.Fatalf("expected mark published without error, got %v", err)
 	}
-	if err := repo.MarkOutboxFailed(context.Background(), "event-2", nextAttemptAt, "kafka down"); err != nil {
+	if err := repo.MarkOutboxFailed(context.Background(), "event-2", nextAttemptAt, "kafka down", 3); err != nil {
 		t.Fatalf("expected mark failed without error, got %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestOutboxStats(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("expected sqlmock db, got %v", err)
+	}
+	defer db.Close()
+
+	repo := NewRepositoryFromDB(db)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT")).
+		WillReturnRows(sqlmock.NewRows([]string{"pending", "oldest_age_seconds", "failed"}).AddRow(2, 45.5, 1))
+
+	stats, err := repo.OutboxStats(context.Background())
+	if err != nil {
+		t.Fatalf("expected stats without error, got %v", err)
+	}
+	if stats.PendingEvents != 2 {
+		t.Fatalf("expected two pending events, got %d", stats.PendingEvents)
+	}
+	if stats.FinalFailedEvents != 1 {
+		t.Fatalf("expected one failed event, got %d", stats.FinalFailedEvents)
+	}
+	if stats.OldestPendingAge != 45500*time.Millisecond {
+		t.Fatalf("expected oldest pending age 45.5s, got %s", stats.OldestPendingAge)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

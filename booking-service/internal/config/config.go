@@ -20,6 +20,8 @@ const (
 	defaultOutboxPollInterval        = 500 * time.Millisecond
 	defaultOutboxInitialRetryDelay   = time.Second
 	defaultOutboxMaxRetryDelay       = 30 * time.Second
+	defaultOutboxClaimTimeout        = 2 * time.Minute
+	defaultOutboxMaxAttempts         = 10
 )
 
 type Config struct {
@@ -36,6 +38,8 @@ type Config struct {
 	OutboxPollInterval        time.Duration
 	OutboxInitialRetryDelay   time.Duration
 	OutboxMaxRetryDelay       time.Duration
+	OutboxClaimTimeout        time.Duration
+	OutboxMaxAttempts         int
 }
 
 func Load() Config {
@@ -53,6 +57,8 @@ func Load() Config {
 		OutboxPollInterval:        durationOrDefault("OUTBOX_POLL_INTERVAL", defaultOutboxPollInterval),
 		OutboxInitialRetryDelay:   durationOrDefault("OUTBOX_RETRY_INITIAL_DELAY", defaultOutboxInitialRetryDelay),
 		OutboxMaxRetryDelay:       durationOrDefault("OUTBOX_RETRY_MAX_DELAY", defaultOutboxMaxRetryDelay),
+		OutboxClaimTimeout:        durationOrDefault("OUTBOX_CLAIM_TIMEOUT", defaultOutboxClaimTimeout),
+		OutboxMaxAttempts:         intOrDefault("OUTBOX_MAX_ATTEMPTS", defaultOutboxMaxAttempts),
 	}
 }
 

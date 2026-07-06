@@ -11,6 +11,8 @@ const (
 	defaultPollInterval      = 500 * time.Millisecond
 	defaultInitialRetryDelay = time.Second
 	defaultMaxRetryDelay     = 30 * time.Second
+	defaultClaimTimeout      = 2 * time.Minute
+	defaultMaxAttempts       = 10
 )
 
 type DispatcherConfig struct {
@@ -18,6 +20,8 @@ type DispatcherConfig struct {
 	PollInterval      time.Duration
 	InitialRetryDelay time.Duration
 	MaxRetryDelay     time.Duration
+	ClaimTimeout      time.Duration
+	MaxAttempts       int
 }
 
 type Dispatcher struct {
@@ -27,6 +31,8 @@ type Dispatcher struct {
 	pollInterval      time.Duration
 	initialRetryDelay time.Duration
 	maxRetryDelay     time.Duration
+	claimTimeout      time.Duration
+	maxAttempts       int
 	logger            *log.Logger
 	clock             func() time.Time
 }
@@ -44,6 +50,12 @@ func NewDispatcher(store Store, publisher Publisher, cfg DispatcherConfig, logge
 	if cfg.MaxRetryDelay <= 0 {
 		cfg.MaxRetryDelay = defaultMaxRetryDelay
 	}
+	if cfg.ClaimTimeout <= 0 {
+		cfg.ClaimTimeout = defaultClaimTimeout
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = defaultMaxAttempts
+	}
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -54,6 +66,8 @@ func NewDispatcher(store Store, publisher Publisher, cfg DispatcherConfig, logge
 		pollInterval:      cfg.PollInterval,
 		initialRetryDelay: cfg.InitialRetryDelay,
 		maxRetryDelay:     cfg.MaxRetryDelay,
+		claimTimeout:      cfg.ClaimTimeout,
+		maxAttempts:       cfg.MaxAttempts,
 		logger:            logger,
 		clock:             func() time.Time { return time.Now().UTC() },
 	}
@@ -81,10 +95,11 @@ func (d *Dispatcher) Run(ctx context.Context) {
 }
 
 func (d *Dispatcher) DispatchBatch(ctx context.Context) (int, error) {
-	events, err := d.store.FetchPendingOutboxEvents(ctx, d.batchSize)
+	events, err := d.store.FetchPendingOutboxEvents(ctx, d.batchSize, d.claimTimeout)
 	if err != nil {
 		return 0, err
 	}
+	defer d.observeStats(ctx)
 
 	processed := 0
 	for _, event := range events {
@@ -94,8 +109,15 @@ func (d *Dispatcher) DispatchBatch(ctx context.Context) (int, error) {
 
 		if err := d.publisher.Publish(ctx, event); err != nil {
 			nextAttemptAt := d.clock().Add(d.retryDelay(event.Attempts))
-			if markErr := d.store.MarkOutboxFailed(ctx, event.EventID, nextAttemptAt, err.Error()); markErr != nil {
+			finalFailure := event.Attempts+1 >= d.maxAttempts
+			if markErr := d.store.MarkOutboxFailed(ctx, event.EventID, nextAttemptAt, err.Error(), d.maxAttempts); markErr != nil {
 				return processed, markErr
+			}
+			recordOutboxPublishFailed(finalFailure)
+			if finalFailure {
+				d.logger.Printf("outbox dispatcher: evento %s marcado como FAILED tras %d intentos: %v", event.EventID, d.maxAttempts, err)
+				processed++
+				continue
 			}
 			d.logger.Printf("outbox dispatcher: evento %s no publicado, reintento en %s: %v", event.EventID, nextAttemptAt.Format(time.RFC3339), err)
 			processed++
@@ -105,10 +127,24 @@ func (d *Dispatcher) DispatchBatch(ctx context.Context) (int, error) {
 		if err := d.store.MarkOutboxPublished(ctx, event.EventID, d.clock()); err != nil {
 			return processed, err
 		}
+		recordOutboxPublished()
 		processed++
 	}
 
 	return processed, nil
+}
+
+func (d *Dispatcher) observeStats(ctx context.Context) {
+	store, ok := d.store.(StatsStore)
+	if !ok {
+		return
+	}
+	stats, err := store.OutboxStats(ctx)
+	if err != nil {
+		d.logger.Printf("outbox dispatcher: no se pudieron actualizar metricas: %v", err)
+		return
+	}
+	observeOutboxStats(stats)
 }
 
 func (d *Dispatcher) retryDelay(attempts int) time.Duration {
