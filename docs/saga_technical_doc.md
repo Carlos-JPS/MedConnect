@@ -4,7 +4,7 @@
 **Servicios involucrados:** `api-gateway`, `booking-service`, `availability-service`, `payment-service`  
 **Servicio orquestador:** `booking-service`  
 **Modelo elegido:** SAGA orquestada  
-**Estado:** orquestador de dominio, contrato gRPC y endpoints REST SAGA implementados; repositorio PostgreSQL pendiente  
+**Estado:** SAGA orquestada implementada, persistida en PostgreSQL y validada con tests por modulo y flujo real Docker/cURL  
 **Base:** `rubrica_entrega2.md`, `README.md`, `docs/sharding_technical_doc.md`, `docs/observabilidad_technical_doc.md`  
 **Ultima actualizacion:** 2026-07-06
 
@@ -319,3 +319,5 @@ Casos a demostrar:
 | 2026-07-06 | Se agregan logs SAGA con `saga_id` y se conserva `x-request-id` hacia `availability-service` y `payment-service`. | Completado |
 | 2026-07-06 | Se agregan metricas SAGA simples en `booking-service` para transiciones, compensaciones y duracion. | Completado |
 | 2026-07-06 | Se amplian tests unitarios del orquestador SAGA para camino feliz, fallos tempranos y compensaciones con cancelacion, liberacion de slot y reembolso. | Completado |
+| 2026-07-06 | Se cablea el repositorio PostgreSQL SAGA y los RPC `StartBookingSaga` / `GetBookingSaga` en el servidor real de `booking-service`. | Completado |
+| 2026-07-06 | Se valida `go test ./...` en modulos backend y flujo real Docker/cURL: SAGA `COMPLETED`, reserva `CONFIRMED`, pago `COMPLETED`, 7 eventos consultables y slot seed en estado `booked`. | Completado |
