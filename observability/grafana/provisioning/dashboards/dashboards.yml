@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: medconnect
+    orgId: 1
+    folder: MedConnect
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

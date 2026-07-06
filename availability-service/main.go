@@ -9,6 +9,7 @@ import (
 
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/config"
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/handler"
+	"github.com/Carlos-JPS/medconnect/availability-service/modules/observability"
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/repository"
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/service"
 	"github.com/Carlos-JPS/medconnect/availability-service/modules/sharding"
@@ -43,7 +44,8 @@ func main() {
 		log.Fatalf("error abriendo puerto %s: %v", addr, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	observability.StartMetricsServer("availability-service")
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.UnaryServerInterceptor("availability-service")))
 	pb.RegisterAvailabilityServiceServer(grpcServer, h)
 	reflection.Register(grpcServer)
 

@@ -7,6 +7,7 @@ import (
 	availabilityclient "github.com/MedConnect/booking-service/internal/clients/availability"
 	paymentclient "github.com/MedConnect/booking-service/internal/clients/payment"
 	"github.com/MedConnect/booking-service/internal/config"
+	"github.com/MedConnect/booking-service/internal/observability"
 	"github.com/MedConnect/booking-service/internal/repository/postgres"
 	"github.com/MedConnect/booking-service/internal/service"
 	grpcserver "github.com/MedConnect/booking-service/internal/transport/grpc"
@@ -46,7 +47,8 @@ func main() {
 		service.WithPaymentClient(paymentClient),
 		service.WithExternalCallTimeout(cfg.ExternalCallTimeout),
 	)
-	server := googlegrpc.NewServer()
+	observability.StartMetricsServer("booking-service")
+	server := googlegrpc.NewServer(googlegrpc.UnaryInterceptor(observability.UnaryServerInterceptor("booking-service")))
 	pb.RegisterBookingServiceServer(server, grpcserver.NewServer(bookingService))
 
 	log.Printf("servidor gRPC de booking-service escuchando en %s:%s", cfg.GRPCHost, cfg.GRPCPort)

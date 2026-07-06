@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	grpcmeta "github.com/MedConnect/api-gateway/internal/grpc/metadata"
 	pb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,25 +36,25 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) CreatePayment(ctx context.Context, req *pb.CreatePaymentRequest) (*pb.CreatePaymentResponse, error) {
-	return c.client.CreatePayment(ctx, req)
+	return c.client.CreatePayment(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) ProcessPayment(ctx context.Context, req *pb.ProcessPaymentRequest) (*pb.ProcessPaymentResponse, error) {
-	return c.client.ProcessPayment(ctx, req)
+	return c.client.ProcessPayment(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.GetPaymentResponse, error) {
-	return c.client.GetPayment(ctx, req)
+	return c.client.GetPayment(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) GetPaymentsByUser(ctx context.Context, req *pb.GetPaymentsByUserRequest) (*pb.GetPaymentsByUserResponse, error) {
-	return c.client.GetPaymentsByUser(ctx, req)
+	return c.client.GetPaymentsByUser(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) GetPaymentByBooking(ctx context.Context, req *pb.GetPaymentByBookingRequest) (*pb.GetPaymentByBookingResponse, error) {
-	return c.client.GetPaymentByBooking(ctx, req)
+	return c.client.GetPaymentByBooking(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) RefundPayment(ctx context.Context, req *pb.RefundPaymentRequest) (*pb.RefundPaymentResponse, error) {
-	return c.client.RefundPayment(ctx, req)
+	return c.client.RefundPayment(grpcmeta.ContextWithRequestID(ctx), req)
 }

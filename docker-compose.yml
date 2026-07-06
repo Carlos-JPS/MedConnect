@@ -1,4 +1,61 @@
 services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - medconnect_internal
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - medconnect_internal
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - loki_data:/loki
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    networks:
+      - medconnect_internal
+
+  alloy:
+    image: grafana/alloy:v1.7.4
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    volumes:
+      - alloy_data:/var/lib/alloy
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - medconnect_internal
+
   api-gateway:
     build:
       context: .
@@ -44,8 +101,10 @@ services:
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+      METRICS_PORT: ${BOOKING_METRICS_PORT:-9090}
     expose:
       - "${BOOKING_SERVICE_PORT:-50051}"
+      - "${BOOKING_METRICS_PORT:-9090}"
     depends_on:
       booking_db:
         condition: service_healthy
@@ -81,8 +140,10 @@ services:
       DB_PASSWORD: ${PAYMENTS_DB_PASSWORD:-postgres}
       DB_NAME: ${PAYMENTS_DB_NAME:-payments_db}
       GRPC_PORT: ${PAYMENT_SERVICE_PORT:-50051}
+      METRICS_PORT: ${PAYMENT_METRICS_PORT:-9090}
     expose:
       - "${PAYMENT_SERVICE_PORT:-50051}"
+      - "${PAYMENT_METRICS_PORT:-9090}"
     depends_on:
       payments-db:
         condition: service_healthy
@@ -124,8 +185,10 @@ services:
       AVAILABILITY_PARTITION_MAP: ${AVAILABILITY_PARTITION_MAP:-0:shard0,1:shard0,2:shard0,3:shard0,4:shard0,5:shard0,6:shard0,7:shard0,8:shard1,9:shard1,10:shard1,11:shard1,12:shard1,13:shard1,14:shard1,15:shard1}
       AVAILABILITY_SHARD0_DSN: ${AVAILABILITY_SHARD0_DSN:-postgres://postgres:postgres@availability-db-shard-0:5432/availability_db?sslmode=disable}
       AVAILABILITY_SHARD1_DSN: ${AVAILABILITY_SHARD1_DSN:-postgres://postgres:postgres@availability-db-shard-1:5432/availability_db?sslmode=disable}
+      METRICS_PORT: ${AVAILABILITY_METRICS_PORT:-9090}
     expose:
       - "${AVAILABILITY_SERVICE_PORT:-50051}"
+      - "${AVAILABILITY_METRICS_PORT:-9090}"
     depends_on:
       availability-db-shard-0:
         condition: service_healthy
@@ -181,8 +244,10 @@ services:
       AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT:-50051}
       AUTH_DB_DSN: ${AUTH_DB_DSN:-postgres://auth:auth_password@auth_db:5432/auth_db?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:-medconnect-jwt-secret-change-me}
+      METRICS_PORT: ${AUTH_METRICS_PORT:-9090}
     expose:
       - "${AUTH_SERVICE_PORT:-50051}"
+      - "${AUTH_METRICS_PORT:-9090}"
     depends_on:
       auth_db:
         condition: service_healthy
@@ -210,6 +275,10 @@ volumes:
   availability-db-shard-0-data:
   availability-db-shard-1-data:
   booking_db_data:
+  alloy_data:
+  grafana_data:
+  loki_data:
+  prometheus_data:
   payments_db_data:
   auth_db_data:
 

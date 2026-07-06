@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/sllanoscaro/payment-service/modules/observability"
 	pb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -35,7 +36,8 @@ func main() {
 		log.Fatalf("error abriendo puerto %s: %v", addr, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	observability.StartMetricsServer("payment-service")
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observability.UnaryServerInterceptor("payment-service")))
 	pb.RegisterPaymentServiceServer(grpcServer, h)
 	reflection.Register(grpcServer)
 
