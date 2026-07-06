@@ -162,7 +162,7 @@ La compensacion principal del dominio es liberar el slot para no bloquear dispon
 
 ## 7. Reintentos e idempotencia
 
-Configuracion propuesta para `booking-service`:
+Configuracion cargada por `booking-service` para que el orquestador SAGA la use en los siguientes pasos de implementacion:
 
 ```text
 BOOKING_SAGA_MAX_RETRIES=3
@@ -298,4 +298,5 @@ Casos a demostrar:
 |---|---|---|
 | 2026-07-06 | Se define SAGA orquestada con `booking-service` como orquestador. | Completado |
 | 2026-07-06 | Se crea documento tecnico vivo inicial. | Completado |
-| 2026-07-06 | Se planifica persistencia de `booking_sagas` y `booking_saga_events`. | En curso |
+| 2026-07-06 | Se planifica persistencia de `booking_sagas` y `booking_saga_events`. | Completado |
+| 2026-07-06 | Se agregan `BOOKING_SAGA_MAX_RETRIES` y `BOOKING_SAGA_RETRY_DELAY` a la configuracion de `booking-service`. | Completado |

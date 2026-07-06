@@ -1,7 +1,10 @@
 package config
 
-import "os"
-import "time"
+import (
+	"os"
+	"strconv"
+	"time"
+)
 
 const (
 	defaultGRPCHost                  = "0.0.0.0"
@@ -9,6 +12,8 @@ const (
 	defaultAvailabilityServiceTarget = "availability-service:50051"
 	defaultPaymentServiceTarget      = "payment-service:50051"
 	defaultExternalCallTimeout       = 3 * time.Second
+	defaultSagaMaxRetries            = 3
+	defaultSagaRetryDelay            = 200 * time.Millisecond
 )
 
 type Config struct {
@@ -18,6 +23,8 @@ type Config struct {
 	AvailabilityServiceTarget string
 	PaymentServiceTarget      string
 	ExternalCallTimeout       time.Duration
+	SagaMaxRetries            int
+	SagaRetryDelay            time.Duration
 }
 
 func Load() Config {
@@ -28,6 +35,8 @@ func Load() Config {
 		AvailabilityServiceTarget: envOrDefault("AVAILABILITY_SERVICE_TARGET", defaultAvailabilityServiceTarget),
 		PaymentServiceTarget:      envOrDefault("PAYMENT_SERVICE_TARGET", defaultPaymentServiceTarget),
 		ExternalCallTimeout:       durationOrDefault("BOOKING_EXTERNAL_CALL_TIMEOUT", defaultExternalCallTimeout),
+		SagaMaxRetries:            nonNegativeIntOrDefault("BOOKING_SAGA_MAX_RETRIES", defaultSagaMaxRetries),
+		SagaRetryDelay:            durationOrDefault("BOOKING_SAGA_RETRY_DELAY", defaultSagaRetryDelay),
 	}
 }
 
@@ -48,4 +57,16 @@ func durationOrDefault(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return duration
+}
+
+func nonNegativeIntOrDefault(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
 }
