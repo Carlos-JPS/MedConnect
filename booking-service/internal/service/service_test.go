@@ -14,6 +14,7 @@ type fakeRepository struct {
 	updatedInput   UpdateBookingStatusInput
 	createErr      error
 	updateErr      error
+	updateErrs     map[Status]error
 	createCalls    int
 	updateCalls    int
 }
@@ -46,6 +47,9 @@ func (r *fakeRepository) ListBookingsByPatient(_ context.Context, patientID stri
 func (r *fakeRepository) UpdateBookingStatus(_ context.Context, input UpdateBookingStatusInput) (Booking, error) {
 	r.updateCalls++
 	r.updatedInput = input
+	if r.updateErrs != nil && r.updateErrs[input.Status] != nil {
+		return Booking{}, r.updateErrs[input.Status]
+	}
 	if r.updateErr != nil {
 		return Booking{}, r.updateErr
 	}

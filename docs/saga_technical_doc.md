@@ -318,3 +318,4 @@ Casos a demostrar:
 | 2026-07-06 | Se agregan endpoints REST autenticados `POST /booking-sagas` y `GET /booking-sagas/{saga_id}` en `api-gateway`. | Completado |
 | 2026-07-06 | Se agregan logs SAGA con `saga_id` y se conserva `x-request-id` hacia `availability-service` y `payment-service`. | Completado |
 | 2026-07-06 | Se agregan metricas SAGA simples en `booking-service` para transiciones, compensaciones y duracion. | Completado |
+| 2026-07-06 | Se amplian tests unitarios del orquestador SAGA para camino feliz, fallos tempranos y compensaciones con cancelacion, liberacion de slot y reembolso. | Completado |

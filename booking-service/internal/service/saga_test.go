@@ -191,6 +191,86 @@ func TestBookingSagaOrchestratorCompensatesRejectedPayment(t *testing.T) {
 	}
 }
 
+func TestBookingSagaOrchestratorFailsWithoutCompensationWhenHoldSlotFails(t *testing.T) {
+	holdErr := errors.New("slot already held")
+	bookingRepo := &fakeRepository{}
+	sagaRepo := &fakeSagaRepository{}
+	availability := &fakeAvailabilityClient{holdErr: holdErr}
+	payment := &sagaPaymentClient{}
+	orchestrator := NewBookingSagaOrchestrator(
+		bookingRepo,
+		sagaRepo,
+		WithSagaAvailabilityClient(availability),
+		WithSagaPaymentClient(payment),
+		WithSagaRetryPolicy(0, 0),
+	)
+
+	result, err := orchestrator.StartBookingSaga(context.Background(), validStartSagaInput())
+	if err == nil {
+		t.Fatal("expected hold slot error")
+	}
+	if !errors.Is(err, ErrExternalDependency) {
+		t.Fatalf("expected external dependency error, got %v", err)
+	}
+
+	if result.Saga.Status != SagaStatusFailed {
+		t.Fatalf("expected failed saga, got %s", result.Saga.Status)
+	}
+	if bookingRepo.createCalls != 0 {
+		t.Fatalf("expected booking not to be created, got %d creates", bookingRepo.createCalls)
+	}
+	if payment.createCalls != 0 || payment.processCalls != 0 || payment.refundCalls != 0 {
+		t.Fatalf("expected no payment calls, got create=%d process=%d refund=%d", payment.createCalls, payment.processCalls, payment.refundCalls)
+	}
+	if availability.releaseCalls != 0 || availability.confirmCalls != 0 {
+		t.Fatalf("expected no slot compensation after failed hold, release=%d confirm=%d", availability.releaseCalls, availability.confirmCalls)
+	}
+	if !sagaRepo.hasStatus(SagaStatusFailed) {
+		t.Fatal("expected failed saga event")
+	}
+}
+
+func TestBookingSagaOrchestratorCompensatesWhenPaymentCreationFails(t *testing.T) {
+	bookingRepo := &fakeRepository{}
+	sagaRepo := &fakeSagaRepository{}
+	availability := &fakeAvailabilityClient{}
+	payment := &sagaPaymentClient{createErr: errors.New("payment service unavailable")}
+	orchestrator := NewBookingSagaOrchestrator(
+		bookingRepo,
+		sagaRepo,
+		WithSagaAvailabilityClient(availability),
+		WithSagaPaymentClient(payment),
+		WithSagaRetryPolicy(0, 0),
+	)
+
+	result, err := orchestrator.StartBookingSaga(context.Background(), validStartSagaInput())
+	if err == nil {
+		t.Fatal("expected payment creation error")
+	}
+
+	if result.Saga.Status != SagaStatusCompensated {
+		t.Fatalf("expected compensated saga, got %s", result.Saga.Status)
+	}
+	if bookingRepo.createCalls != 1 {
+		t.Fatalf("expected booking to be created before compensation, got %d creates", bookingRepo.createCalls)
+	}
+	if bookingRepo.updatedInput.Status != StatusCancelled {
+		t.Fatalf("expected booking cancellation, got %s", bookingRepo.updatedInput.Status)
+	}
+	if availability.releaseCalls != 1 {
+		t.Fatalf("expected slot release compensation, got %d", availability.releaseCalls)
+	}
+	if payment.lookupCalls != 1 || payment.createCalls != 1 {
+		t.Fatalf("expected one payment lookup and create attempt, lookup=%d create=%d", payment.lookupCalls, payment.createCalls)
+	}
+	if payment.processCalls != 0 || payment.refundCalls != 0 {
+		t.Fatalf("expected no process/refund after payment create failure, process=%d refund=%d", payment.processCalls, payment.refundCalls)
+	}
+	if !sagaRepo.hasStatus(SagaStatusCompensating) || !sagaRepo.hasStatus(SagaStatusCompensated) {
+		t.Fatalf("expected compensating and compensated saga events")
+	}
+}
+
 func TestBookingSagaOrchestratorReusesExistingPaymentByBooking(t *testing.T) {
 	bookingRepo := &fakeRepository{}
 	sagaRepo := &fakeSagaRepository{}
@@ -299,6 +379,44 @@ func TestBookingSagaOrchestratorRefundsWhenSlotConfirmationFails(t *testing.T) {
 	}
 	if bookingRepo.updatedInput.Status != StatusCancelled {
 		t.Fatalf("expected booking cancellation, got %s", bookingRepo.updatedInput.Status)
+	}
+}
+
+func TestBookingSagaOrchestratorRefundsWhenBookingConfirmationFails(t *testing.T) {
+	bookingRepo := &fakeRepository{updateErrs: map[Status]error{StatusConfirmed: errors.New("booking confirmation failed")}}
+	sagaRepo := &fakeSagaRepository{}
+	availability := &fakeAvailabilityClient{}
+	payment := &sagaPaymentClient{processStatus: PaymentStatusCompleted}
+	orchestrator := NewBookingSagaOrchestrator(
+		bookingRepo,
+		sagaRepo,
+		WithSagaAvailabilityClient(availability),
+		WithSagaPaymentClient(payment),
+		WithSagaRetryPolicy(0, 0),
+	)
+
+	result, err := orchestrator.StartBookingSaga(context.Background(), validStartSagaInput())
+	if err == nil {
+		t.Fatal("expected booking confirmation error")
+	}
+
+	if result.Saga.Status != SagaStatusCompensated {
+		t.Fatalf("expected compensated saga, got %s", result.Saga.Status)
+	}
+	if availability.confirmCalls != 1 {
+		t.Fatalf("expected slot confirmation before booking confirmation failure, got %d", availability.confirmCalls)
+	}
+	if payment.refundCalls != 1 {
+		t.Fatalf("expected payment refund compensation, got %d", payment.refundCalls)
+	}
+	if availability.releaseCalls != 1 {
+		t.Fatalf("expected slot release compensation, got %d", availability.releaseCalls)
+	}
+	if bookingRepo.updatedInput.Status != StatusCancelled {
+		t.Fatalf("expected final booking update to cancel appointment, got %s", bookingRepo.updatedInput.Status)
+	}
+	if !sagaRepo.hasStatus(SagaStatusSlotConfirmed) || !sagaRepo.hasStatus(SagaStatusCompensated) {
+		t.Fatal("expected slot confirmed and compensated saga events")
 	}
 }
 
