@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	grpcmeta "github.com/MedConnect/booking-service/internal/clients/metadata"
 	"github.com/google/uuid"
 )
 
@@ -208,6 +210,7 @@ func (o *bookingSagaOrchestrator) StartBookingSaga(ctx context.Context, input St
 		return BookingSagaResult{}, fmt.Errorf("crear saga booking: %w", err)
 	}
 	saga = createdSaga
+	logSagaTransition(ctx, saga, "saga_started", "")
 
 	booking := Booking{
 		BookingID:     bookingID,
@@ -497,7 +500,12 @@ func (o *bookingSagaOrchestrator) updateSaga(ctx context.Context, saga BookingSa
 		completedAt := saga.UpdatedAt
 		saga.CompletedAt = &completedAt
 	}
-	return o.sagaRepo.UpdateSaga(ctx, saga, o.sagaEvent(saga, string(status), payload, lastError))
+	updated, err := o.sagaRepo.UpdateSaga(ctx, saga, o.sagaEvent(saga, string(status), payload, lastError))
+	if err != nil {
+		return BookingSaga{}, err
+	}
+	logSagaTransition(ctx, updated, "saga_transition", lastError)
+	return updated, nil
 }
 
 func (o *bookingSagaOrchestrator) sagaEvent(saga BookingSaga, eventType string, payload map[string]any, errorMessage string) BookingSagaEvent {
@@ -550,6 +558,41 @@ func (o *bookingSagaOrchestrator) externalContext(ctx context.Context) (context.
 
 func (o *bookingSagaOrchestrator) now() time.Time {
 	return o.clock().UTC()
+}
+
+func logSagaTransition(ctx context.Context, saga BookingSaga, event string, errorMessage string) {
+	requestID := grpcmeta.RequestIDFromContext(ctx)
+	if requestID == "" {
+		requestID = "unknown"
+	}
+
+	if errorMessage == "" {
+		log.Printf(
+			"service=booking-service component=saga event=%s request_id=%s saga_id=%s booking_id=%s payment_id=%s step=%s status=%s compensation_status=%s",
+			event,
+			requestID,
+			saga.SagaID,
+			saga.BookingID,
+			saga.PaymentID,
+			saga.CurrentStep,
+			saga.Status,
+			saga.CompensationStatus,
+		)
+		return
+	}
+
+	log.Printf(
+		"service=booking-service component=saga event=%s request_id=%s saga_id=%s booking_id=%s payment_id=%s step=%s status=%s compensation_status=%s error=%q",
+		event,
+		requestID,
+		saga.SagaID,
+		saga.BookingID,
+		saga.PaymentID,
+		saga.CurrentStep,
+		saga.Status,
+		saga.CompensationStatus,
+		errorMessage,
+	)
 }
 
 func joinSagaError(primary error, compensation error) error {

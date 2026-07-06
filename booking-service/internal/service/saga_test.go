@@ -1,10 +1,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/metadata"
 )
 
 type fakeSagaRepository struct {
@@ -220,6 +225,45 @@ func TestBookingSagaOrchestratorReusesExistingPaymentByBooking(t *testing.T) {
 	}
 	if result.Payment.PaymentID != "payment-existing" {
 		t.Fatalf("expected existing payment in result, got %q", result.Payment.PaymentID)
+	}
+}
+
+func TestBookingSagaOrchestratorLogsSagaIDAndRequestID(t *testing.T) {
+	var logs bytes.Buffer
+	previousOutput := log.Writer()
+	previousFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
+	})
+
+	bookingRepo := &fakeRepository{}
+	sagaRepo := &fakeSagaRepository{}
+	orchestrator := NewBookingSagaOrchestrator(
+		bookingRepo,
+		sagaRepo,
+		WithSagaAvailabilityClient(&fakeAvailabilityClient{}),
+		WithSagaPaymentClient(&sagaPaymentClient{processStatus: PaymentStatusCompleted}),
+		WithSagaRetryPolicy(0, 0),
+	)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-request-id", "request-123"))
+
+	result, err := orchestrator.StartBookingSaga(ctx, validStartSagaInput())
+	if err != nil {
+		t.Fatalf("expected saga success, got %v", err)
+	}
+
+	output := logs.String()
+	if !strings.Contains(output, "request_id=request-123") {
+		t.Fatalf("expected request id in saga logs, got %s", output)
+	}
+	if !strings.Contains(output, "saga_id="+result.Saga.SagaID) {
+		t.Fatalf("expected saga id in logs, got %s", output)
+	}
+	if !strings.Contains(output, "status=COMPLETED") {
+		t.Fatalf("expected completed status in logs, got %s", output)
 	}
 }
 

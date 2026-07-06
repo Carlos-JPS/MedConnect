@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	grpcmeta "github.com/MedConnect/booking-service/internal/clients/metadata"
 	"github.com/MedConnect/booking-service/internal/service"
 	pb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc"
@@ -37,7 +38,7 @@ func (c *GRPCClient) Close() error {
 }
 
 func (c *GRPCClient) CreatePayment(ctx context.Context, input service.CreatePaymentInput) (service.PaymentDetails, error) {
-	resp, err := c.client.CreatePayment(ctx, &pb.CreatePaymentRequest{
+	resp, err := c.client.CreatePayment(grpcmeta.ContextWithRequestID(ctx), &pb.CreatePaymentRequest{
 		BookingId: input.BookingID,
 		UserId:    input.UserID,
 		Amount:    input.Amount,
@@ -50,7 +51,7 @@ func (c *GRPCClient) CreatePayment(ctx context.Context, input service.CreatePaym
 }
 
 func (c *GRPCClient) ProcessPayment(ctx context.Context, input service.ProcessPaymentInput) (service.ProcessPaymentResult, error) {
-	resp, err := c.client.ProcessPayment(ctx, &pb.ProcessPaymentRequest{
+	resp, err := c.client.ProcessPayment(grpcmeta.ContextWithRequestID(ctx), &pb.ProcessPaymentRequest{
 		PaymentId:       input.PaymentID,
 		PaymentMethodId: input.PaymentMethodID,
 	})
@@ -65,7 +66,7 @@ func (c *GRPCClient) ProcessPayment(ctx context.Context, input service.ProcessPa
 }
 
 func (c *GRPCClient) GetPayment(ctx context.Context, paymentID string) (service.PaymentDetails, error) {
-	resp, err := c.client.GetPayment(ctx, &pb.GetPaymentRequest{PaymentId: paymentID})
+	resp, err := c.client.GetPayment(grpcmeta.ContextWithRequestID(ctx), &pb.GetPaymentRequest{PaymentId: paymentID})
 	if err != nil {
 		return service.PaymentDetails{}, err
 	}
@@ -73,7 +74,7 @@ func (c *GRPCClient) GetPayment(ctx context.Context, paymentID string) (service.
 }
 
 func (c *GRPCClient) GetPaymentByBooking(ctx context.Context, bookingID string) (service.PaymentDetails, error) {
-	resp, err := c.client.GetPaymentByBooking(ctx, &pb.GetPaymentByBookingRequest{BookingId: bookingID})
+	resp, err := c.client.GetPaymentByBooking(grpcmeta.ContextWithRequestID(ctx), &pb.GetPaymentByBookingRequest{BookingId: bookingID})
 	if err != nil {
 		return service.PaymentDetails{}, err
 	}
@@ -81,7 +82,7 @@ func (c *GRPCClient) GetPaymentByBooking(ctx context.Context, bookingID string) 
 }
 
 func (c *GRPCClient) RefundPayment(ctx context.Context, input service.RefundPaymentInput) (service.RefundDetails, error) {
-	resp, err := c.client.RefundPayment(ctx, &pb.RefundPaymentRequest{
+	resp, err := c.client.RefundPayment(grpcmeta.ContextWithRequestID(ctx), &pb.RefundPaymentRequest{
 		PaymentId: input.PaymentID,
 		Amount:    input.Amount,
 		Reason:    input.Reason,

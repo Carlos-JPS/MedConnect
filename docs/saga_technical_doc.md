@@ -208,6 +208,12 @@ status
 
 Las metricas propuestas para una etapa posterior son contadores por resultado de SAGA y compensaciones. Deben agregarse en `booking-service` sin cambiar los nombres de metricas ya implementados por Observabilidad.
 
+Estado actual de logging y propagacion:
+
+- `api-gateway` sigue propagando `X-Request-ID` hacia `booking-service` como metadata gRPC `x-request-id`.
+- `booking-service` reenvia ese `x-request-id` en sus clientes internos hacia `availability-service` y `payment-service`.
+- El orquestador SAGA escribe logs por transicion con formato logfmt e incluye `request_id`, `saga_id`, `booking_id`, `payment_id`, `step`, `status` y `compensation_status`.
+
 ---
 
 ## 9. Persistencia propuesta
@@ -304,3 +310,4 @@ Casos a demostrar:
 | 2026-07-06 | Se implementa el orquestador SAGA en `booking-service/internal/service` con interfaz `SagaRepository`, flujo feliz, compensaciones y tests unitarios. | Completado |
 | 2026-07-06 | Se agregan RPC `StartBookingSaga` y `GetBookingSaga` al contrato `booking.proto` y se regeneran `booking.pb.go` / `booking_grpc.pb.go` con `protoc`. | Completado |
 | 2026-07-06 | Se agregan endpoints REST autenticados `POST /booking-sagas` y `GET /booking-sagas/{saga_id}` en `api-gateway`. | Completado |
+| 2026-07-06 | Se agregan logs SAGA con `saga_id` y se conserva `x-request-id` hacia `availability-service` y `payment-service`. | Completado |

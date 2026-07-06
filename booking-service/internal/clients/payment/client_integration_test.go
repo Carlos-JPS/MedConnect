@@ -8,6 +8,7 @@ import (
 	"github.com/MedConnect/booking-service/internal/service"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type fakePaymentServiceServer struct {
@@ -16,10 +17,12 @@ type fakePaymentServiceServer struct {
 	processReq      *paymentpb.ProcessPaymentRequest
 	getByBookingReq *paymentpb.GetPaymentByBookingRequest
 	refundReq       *paymentpb.RefundPaymentRequest
+	requestID       string
 }
 
-func (s *fakePaymentServiceServer) CreatePayment(_ context.Context, req *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error) {
+func (s *fakePaymentServiceServer) CreatePayment(ctx context.Context, req *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error) {
 	s.createReq = req
+	s.captureRequestID(ctx)
 	return &paymentpb.CreatePaymentResponse{
 		Payment: &paymentpb.Payment{
 			PaymentId: "payment-created",
@@ -30,6 +33,17 @@ func (s *fakePaymentServiceServer) CreatePayment(_ context.Context, req *payment
 			Status:    "pending",
 		},
 	}, nil
+}
+
+func (s *fakePaymentServiceServer) captureRequestID(ctx context.Context) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return
+	}
+	values := md.Get("x-request-id")
+	if len(values) > 0 {
+		s.requestID = values[0]
+	}
 }
 
 func (s *fakePaymentServiceServer) ProcessPayment(_ context.Context, req *paymentpb.ProcessPaymentRequest) (*paymentpb.ProcessPaymentResponse, error) {
@@ -102,7 +116,7 @@ func TestGRPCClientUsesPaymentServiceContract(t *testing.T) {
 		_ = client.Close()
 	})
 
-	ctx := context.Background()
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-request-id", "request-123"))
 
 	created, err := client.CreatePayment(ctx, service.CreatePaymentInput{
 		BookingID: "booking-1",
@@ -118,6 +132,9 @@ func TestGRPCClientUsesPaymentServiceContract(t *testing.T) {
 	}
 	if created.PaymentID != "payment-created" || created.Status != service.PaymentStatusPending {
 		t.Fatalf("unexpected created payment: %+v", created)
+	}
+	if fakeServer.requestID != "request-123" {
+		t.Fatalf("expected propagated request id request-123, got %q", fakeServer.requestID)
 	}
 
 	processed, err := client.ProcessPayment(ctx, service.ProcessPaymentInput{
