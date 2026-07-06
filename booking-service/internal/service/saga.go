@@ -10,6 +10,7 @@ import (
 	"time"
 
 	grpcmeta "github.com/MedConnect/booking-service/internal/clients/metadata"
+	"github.com/MedConnect/booking-service/internal/observability"
 	"github.com/google/uuid"
 )
 
@@ -211,6 +212,7 @@ func (o *bookingSagaOrchestrator) StartBookingSaga(ctx context.Context, input St
 	}
 	saga = createdSaga
 	logSagaTransition(ctx, saga, "saga_started", "")
+	recordSagaMetrics(saga)
 
 	booking := Booking{
 		BookingID:     bookingID,
@@ -470,6 +472,7 @@ func (o *bookingSagaOrchestrator) compensate(ctx context.Context, saga BookingSa
 	}
 
 	if err := errors.Join(compensationErrs...); err != nil {
+		observability.RecordSagaCompensation("failed")
 		updated, updateErr := o.updateSaga(ctx, saga, SagaStatusCompensationFailed, SagaStepCompensate, SagaCompensationFailed, err.Error(), map[string]any{"reason": plan.reason})
 		if updateErr == nil {
 			saga = updated
@@ -477,6 +480,7 @@ func (o *bookingSagaOrchestrator) compensate(ctx context.Context, saga BookingSa
 		return saga, err
 	}
 
+	observability.RecordSagaCompensation("completed")
 	updated, err = o.updateSaga(ctx, saga, SagaStatusCompensated, SagaStepCompensate, SagaCompensationCompleted, cause.Error(), map[string]any{"reason": plan.reason})
 	if err == nil {
 		saga = updated
@@ -505,6 +509,7 @@ func (o *bookingSagaOrchestrator) updateSaga(ctx context.Context, saga BookingSa
 		return BookingSaga{}, err
 	}
 	logSagaTransition(ctx, updated, "saga_transition", lastError)
+	recordSagaMetrics(updated)
 	return updated, nil
 }
 
@@ -593,6 +598,23 @@ func logSagaTransition(ctx context.Context, saga BookingSaga, event string, erro
 		saga.CompensationStatus,
 		errorMessage,
 	)
+}
+
+func recordSagaMetrics(saga BookingSaga) {
+	observability.RecordSagaTransition(string(saga.Status), string(saga.CurrentStep), string(saga.CompensationStatus))
+	if !isTerminalSagaStatus(saga.Status) {
+		return
+	}
+	observability.ObserveSagaDuration(string(saga.Status), saga.UpdatedAt.Sub(saga.CreatedAt))
+}
+
+func isTerminalSagaStatus(status SagaStatus) bool {
+	switch status {
+	case SagaStatusCompleted, SagaStatusCompensated, SagaStatusFailed, SagaStatusCompensationFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func joinSagaError(primary error, compensation error) error {
