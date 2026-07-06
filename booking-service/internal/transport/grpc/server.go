@@ -17,10 +17,11 @@ import (
 type Server struct {
 	pb.UnimplementedBookingServiceServer
 	bookingService service.BookingService
+	sagaService    service.BookingSagaService
 }
 
-func NewServer(bookingService service.BookingService) *Server {
-	return &Server{bookingService: bookingService}
+func NewServer(bookingService service.BookingService, sagaService service.BookingSagaService) *Server {
+	return &Server{bookingService: bookingService, sagaService: sagaService}
 }
 
 func (s *Server) CreateBooking(ctx context.Context, req *pb.CreateBookingRequest) (*pb.CreateBookingResponse, error) {
@@ -122,12 +123,86 @@ func mapBooking(booking service.Booking) *pb.Booking {
 	}
 }
 
+func (s *Server) StartBookingSaga(ctx context.Context, req *pb.StartBookingSagaRequest) (*pb.StartBookingSagaResponse, error) {
+	result, err := s.sagaService.StartBookingSaga(ctx, service.StartBookingSagaInput{
+		PatientID:       req.GetPatientId(),
+		DoctorID:        req.GetDoctorId(),
+		SlotID:          req.GetSlotId(),
+		Notes:           req.GetNotes(),
+		Amount:          req.GetAmount(),
+		Currency:        req.GetCurrency(),
+		PaymentMethodID: req.GetPaymentMethodId(),
+	})
+	if err != nil {
+		return nil, mapServiceError(err)
+	}
+
+	return &pb.StartBookingSagaResponse{
+		Saga:          mapSaga(result.Saga),
+		Booking:       mapBooking(result.Booking),
+		PaymentId:     result.Payment.PaymentID,
+		PaymentStatus: string(result.Payment.Status),
+	}, nil
+}
+
+func (s *Server) GetBookingSaga(ctx context.Context, req *pb.GetBookingSagaRequest) (*pb.GetBookingSagaResponse, error) {
+	details, err := s.sagaService.GetBookingSaga(ctx, req.GetSagaId())
+	if err != nil {
+		return nil, mapServiceError(err)
+	}
+
+	return &pb.GetBookingSagaResponse{
+		Saga:   mapSaga(details.Saga),
+		Events: mapSagaEvents(details.Events),
+	}, nil
+}
+
 func mapEvents(events []service.BookingEvent) []*pb.BookingEvent {
 	result := make([]*pb.BookingEvent, 0, len(events))
 	for _, event := range events {
 		result = append(result, mapEvent(event))
 	}
 	return result
+}
+
+func mapSaga(saga service.BookingSaga) *pb.BookingSaga {
+	return &pb.BookingSaga{
+		SagaId:             saga.SagaID,
+		BookingId:          saga.BookingID,
+		PaymentId:          saga.PaymentID,
+		PatientId:          saga.PatientID,
+		DoctorId:           saga.DoctorID,
+		SlotId:             saga.SlotID,
+		Status:             mapSagaStatus(saga.Status),
+		CurrentStep:        string(saga.CurrentStep),
+		CompensationStatus: mapSagaCompensationStatus(saga.CompensationStatus),
+		RetryCount:         int32(saga.RetryCount),
+		LastError:          saga.LastError,
+		CreatedAt:          timestamppb.New(saga.CreatedAt),
+		UpdatedAt:          timestamppb.New(saga.UpdatedAt),
+		CompletedAt:        timestampPtr(saga.CompletedAt),
+	}
+}
+
+func mapSagaEvents(events []service.BookingSagaEvent) []*pb.BookingSagaEvent {
+	result := make([]*pb.BookingSagaEvent, 0, len(events))
+	for _, event := range events {
+		result = append(result, mapSagaEvent(event))
+	}
+	return result
+}
+
+func mapSagaEvent(event service.BookingSagaEvent) *pb.BookingSagaEvent {
+	return &pb.BookingSagaEvent{
+		EventId:      event.EventID,
+		SagaId:       event.SagaID,
+		EventType:    event.EventType,
+		Step:         string(event.Step),
+		Status:       mapSagaStatus(event.Status),
+		Payload:      mapPayload(event.Payload),
+		ErrorMessage: event.ErrorMessage,
+		CreatedAt:    timestamppb.New(event.CreatedAt),
+	}
 }
 
 func mapEvent(event service.BookingEvent) *pb.BookingEvent {
@@ -167,6 +242,52 @@ func mapPBStatus(status pb.BookingStatus) service.Status {
 		return service.StatusExpired
 	default:
 		return service.StatusUnspecified
+	}
+}
+
+func mapSagaStatus(status service.SagaStatus) pb.BookingSagaStatus {
+	switch status {
+	case service.SagaStatusStarted:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_STARTED
+	case service.SagaStatusSlotHeld:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_SLOT_HELD
+	case service.SagaStatusBookingCreated:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_BOOKING_CREATED
+	case service.SagaStatusPaymentCreated:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_PAYMENT_CREATED
+	case service.SagaStatusPaymentCompleted:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_PAYMENT_COMPLETED
+	case service.SagaStatusSlotConfirmed:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_SLOT_CONFIRMED
+	case service.SagaStatusCompleted:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPLETED
+	case service.SagaStatusCompensating:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATING
+	case service.SagaStatusCompensated:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATED
+	case service.SagaStatusFailed:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_FAILED
+	case service.SagaStatusCompensationFailed:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATION_FAILED
+	default:
+		return pb.BookingSagaStatus_BOOKING_SAGA_STATUS_UNSPECIFIED
+	}
+}
+
+func mapSagaCompensationStatus(status service.SagaCompensationStatus) pb.BookingSagaCompensationStatus {
+	switch status {
+	case service.SagaCompensationNotRequired:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_NOT_REQUIRED
+	case service.SagaCompensationPending:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_PENDING
+	case service.SagaCompensationInProgress:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_IN_PROGRESS
+	case service.SagaCompensationCompleted:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_COMPLETED
+	case service.SagaCompensationFailed:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_FAILED
+	default:
+		return pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_UNSPECIFIED
 	}
 }
 

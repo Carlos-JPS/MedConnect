@@ -32,10 +32,47 @@ var (
 		},
 		[]string{"service", "method", "code"},
 	)
+	sagaTransitionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "medconnect_booking_saga_transitions_total",
+			Help: "Total de transiciones de estado ejecutadas por el orquestador SAGA de booking-service.",
+		},
+		[]string{"status", "step", "compensation_status"},
+	)
+	sagaCompensationsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "medconnect_booking_saga_compensations_total",
+			Help: "Total de compensaciones SAGA ejecutadas por resultado.",
+		},
+		[]string{"result"},
+	)
+	sagaDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "medconnect_booking_saga_duration_seconds",
+			Help:    "Duración de SAGA de booking-service al alcanzar un estado terminal.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"status"},
+	)
 )
 
 func init() {
-	prometheus.MustRegister(grpcServerRequestsTotal, grpcServerRequestDuration)
+	prometheus.MustRegister(grpcServerRequestsTotal, grpcServerRequestDuration, sagaTransitionsTotal, sagaCompensationsTotal, sagaDurationSeconds)
+}
+
+func RecordSagaTransition(status string, step string, compensationStatus string) {
+	sagaTransitionsTotal.WithLabelValues(status, step, compensationStatus).Inc()
+}
+
+func RecordSagaCompensation(result string) {
+	sagaCompensationsTotal.WithLabelValues(result).Inc()
+}
+
+func ObserveSagaDuration(status string, duration time.Duration) {
+	if duration < 0 {
+		duration = 0
+	}
+	sagaDurationSeconds.WithLabelValues(status).Observe(duration.Seconds())
 }
 
 func StartMetricsServer(serviceName string) {

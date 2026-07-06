@@ -54,3 +54,11 @@ func (c *Client) ListBookingsByPatient(ctx context.Context, req *pb.ListBookings
 func (c *Client) ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingRequest) (*pb.ConfirmBookingResponse, error) {
 	return c.client.ConfirmBooking(grpcmeta.ContextWithRequestID(ctx), req)
 }
+
+func (c *Client) StartBookingSaga(ctx context.Context, req *pb.StartBookingSagaRequest) (*pb.StartBookingSagaResponse, error) {
+	return c.client.StartBookingSaga(grpcmeta.ContextWithRequestID(ctx), req)
+}
+
+func (c *Client) GetBookingSaga(ctx context.Context, req *pb.GetBookingSagaRequest) (*pb.GetBookingSagaResponse, error) {
+	return c.client.GetBookingSaga(grpcmeta.ContextWithRequestID(ctx), req)
+}

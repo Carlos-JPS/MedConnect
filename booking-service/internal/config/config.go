@@ -22,6 +22,8 @@ const (
 	defaultOutboxMaxRetryDelay       = 30 * time.Second
 	defaultOutboxClaimTimeout        = 2 * time.Minute
 	defaultOutboxMaxAttempts         = 10
+	defaultSagaMaxRetries            = 3
+	defaultSagaRetryDelay            = 200 * time.Millisecond
 )
 
 type Config struct {
@@ -40,6 +42,8 @@ type Config struct {
 	OutboxMaxRetryDelay       time.Duration
 	OutboxClaimTimeout        time.Duration
 	OutboxMaxAttempts         int
+	SagaMaxRetries            int
+	SagaRetryDelay            time.Duration
 }
 
 func Load() Config {
@@ -53,12 +57,14 @@ func Load() Config {
 		KafkaBrokers:              csvEnvOrDefault("KAFKA_BROKERS", defaultKafkaBrokers),
 		BookingEventsTopic:        envOrDefault("BOOKING_EVENTS_TOPIC", defaultBookingEventsTopic),
 		OutboxDispatcherEnabled:   boolOrDefault("OUTBOX_DISPATCHER_ENABLED", defaultOutboxDispatcherEnabled),
-		OutboxBatchSize:           intOrDefault("OUTBOX_BATCH_SIZE", defaultOutboxBatchSize),
+		OutboxBatchSize:           positiveIntOrDefault("OUTBOX_BATCH_SIZE", defaultOutboxBatchSize),
 		OutboxPollInterval:        durationOrDefault("OUTBOX_POLL_INTERVAL", defaultOutboxPollInterval),
 		OutboxInitialRetryDelay:   durationOrDefault("OUTBOX_RETRY_INITIAL_DELAY", defaultOutboxInitialRetryDelay),
 		OutboxMaxRetryDelay:       durationOrDefault("OUTBOX_RETRY_MAX_DELAY", defaultOutboxMaxRetryDelay),
 		OutboxClaimTimeout:        durationOrDefault("OUTBOX_CLAIM_TIMEOUT", defaultOutboxClaimTimeout),
-		OutboxMaxAttempts:         intOrDefault("OUTBOX_MAX_ATTEMPTS", defaultOutboxMaxAttempts),
+		OutboxMaxAttempts:         positiveIntOrDefault("OUTBOX_MAX_ATTEMPTS", defaultOutboxMaxAttempts),
+		SagaMaxRetries:            nonNegativeIntOrDefault("BOOKING_SAGA_MAX_RETRIES", defaultSagaMaxRetries),
+		SagaRetryDelay:            durationOrDefault("BOOKING_SAGA_RETRY_DELAY", defaultSagaRetryDelay),
 	}
 }
 
@@ -106,13 +112,25 @@ func boolOrDefault(key string, fallback bool) bool {
 	return parsed
 }
 
-func intOrDefault(key string, fallback int) int {
+func positiveIntOrDefault(key string, fallback int) int {
 	value := os.Getenv(key)
 	if value == "" {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func nonNegativeIntOrDefault(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
 		return fallback
 	}
 	return parsed

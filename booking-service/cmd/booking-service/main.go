@@ -56,9 +56,17 @@ func main() {
 		service.WithPaymentClient(paymentClient),
 		service.WithExternalCallTimeout(cfg.ExternalCallTimeout),
 	)
+	sagaService := service.NewBookingSagaOrchestrator(
+		repo,
+		repo,
+		service.WithSagaAvailabilityClient(availabilityClient),
+		service.WithSagaPaymentClient(paymentClient),
+		service.WithSagaExternalCallTimeout(cfg.ExternalCallTimeout),
+		service.WithSagaRetryPolicy(cfg.SagaMaxRetries, cfg.SagaRetryDelay),
+	)
 	observability.StartMetricsServer("booking-service")
 	server := googlegrpc.NewServer(googlegrpc.UnaryInterceptor(observability.UnaryServerInterceptor("booking-service")))
-	pb.RegisterBookingServiceServer(server, grpcserver.NewServer(bookingService))
+	pb.RegisterBookingServiceServer(server, grpcserver.NewServer(bookingService, sagaService))
 
 	if cfg.OutboxDispatcherEnabled {
 		publisher, err := kafkamessaging.NewPublisher(cfg.KafkaBrokers)

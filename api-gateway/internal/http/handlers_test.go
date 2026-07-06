@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	authpb "github.com/MedConnect/auth-service/pb"
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
 	"google.golang.org/grpc/codes"
@@ -23,6 +24,8 @@ type fakeBookingClient struct {
 	cancelReq  *pb.CancelBookingRequest
 	cancelErr  error
 	confirmReq *pb.ConfirmBookingRequest
+	sagaReq    *pb.StartBookingSagaRequest
+	getSagaReq *pb.GetBookingSagaRequest
 }
 
 func (c *fakeBookingClient) CreateBooking(_ context.Context, req *pb.CreateBookingRequest) (*pb.CreateBookingResponse, error) {
@@ -86,6 +89,77 @@ func (c *fakeBookingClient) ConfirmBooking(_ context.Context, req *pb.ConfirmBoo
 		Status:    pb.BookingStatus_BOOKING_STATUS_CONFIRMED,
 		UpdatedAt: timestamppb.New(time.Date(2026, time.May, 4, 10, 30, 0, 0, time.UTC)),
 	}, nil
+}
+
+func (c *fakeBookingClient) StartBookingSaga(_ context.Context, req *pb.StartBookingSagaRequest) (*pb.StartBookingSagaResponse, error) {
+	c.sagaReq = req
+	return &pb.StartBookingSagaResponse{
+		Saga: &pb.BookingSaga{
+			SagaId:             "saga-1",
+			BookingId:          "booking-1",
+			PaymentId:          "payment-1",
+			PatientId:          req.GetPatientId(),
+			DoctorId:           req.GetDoctorId(),
+			SlotId:             req.GetSlotId(),
+			Status:             pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPLETED,
+			CurrentStep:        "CONFIRM_BOOKING",
+			CompensationStatus: pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_NOT_REQUIRED,
+			CreatedAt:          timestamppb.New(time.Date(2026, time.May, 4, 10, 0, 0, 0, time.UTC)),
+			UpdatedAt:          timestamppb.New(time.Date(2026, time.May, 4, 10, 2, 0, 0, time.UTC)),
+			CompletedAt:        timestamppb.New(time.Date(2026, time.May, 4, 10, 2, 0, 0, time.UTC)),
+		},
+		Booking: &pb.Booking{
+			BookingId: "booking-1",
+			PatientId: req.GetPatientId(),
+			DoctorId:  req.GetDoctorId(),
+			SlotId:    req.GetSlotId(),
+			Status:    pb.BookingStatus_BOOKING_STATUS_CONFIRMED,
+			PaymentId: "payment-1",
+		},
+		PaymentId:     "payment-1",
+		PaymentStatus: "COMPLETED",
+	}, nil
+}
+
+func (c *fakeBookingClient) GetBookingSaga(_ context.Context, req *pb.GetBookingSagaRequest) (*pb.GetBookingSagaResponse, error) {
+	c.getSagaReq = req
+	return &pb.GetBookingSagaResponse{
+		Saga: &pb.BookingSaga{
+			SagaId:             req.GetSagaId(),
+			BookingId:          "booking-1",
+			Status:             pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPLETED,
+			CurrentStep:        "CONFIRM_BOOKING",
+			CompensationStatus: pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_NOT_REQUIRED,
+		},
+		Events: []*pb.BookingSagaEvent{
+			{
+				EventId:   "event-1",
+				SagaId:    req.GetSagaId(),
+				EventType: "SAGA_STARTED",
+				Step:      "START",
+				Status:    pb.BookingSagaStatus_BOOKING_SAGA_STATUS_STARTED,
+				CreatedAt: timestamppb.New(time.Date(2026, time.May, 4, 10, 0, 0, 0, time.UTC)),
+			},
+		},
+	}, nil
+}
+
+type fakeAuthClient struct{}
+
+func (fakeAuthClient) RegisterUser(context.Context, *authpb.RegisterUserRequest) (*authpb.RegisterUserResponse, error) {
+	return &authpb.RegisterUserResponse{}, nil
+}
+
+func (fakeAuthClient) Login(context.Context, *authpb.LoginRequest) (*authpb.LoginResponse, error) {
+	return &authpb.LoginResponse{}, nil
+}
+
+func (fakeAuthClient) ValidateToken(context.Context, *authpb.ValidateTokenRequest) (*authpb.ValidateTokenResponse, error) {
+	return &authpb.ValidateTokenResponse{Valid: true, UserId: "patient-1", Role: "PATIENT"}, nil
+}
+
+func (fakeAuthClient) GetUserById(context.Context, *authpb.GetUserByIdRequest) (*authpb.GetUserByIdResponse, error) {
+	return &authpb.GetUserByIdResponse{}, nil
 }
 
 type fakePaymentClient struct {
@@ -173,13 +247,14 @@ func (c *fakePaymentClient) RefundPayment(_ context.Context, req *paymentpb.Refu
 
 func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodPost, "/bookings", strings.NewReader(`{
 		"patient_id":"patient-1",
 		"doctor_id":"doctor-1",
 		"slot_id":"slot-1",
 		"notes":"Control anual"
 	}`))
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -197,8 +272,9 @@ func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 
 func TestGetBookingEndpointUsesPathID(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodGet, "/bookings/booking-1", nil)
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -213,8 +289,9 @@ func TestGetBookingEndpointUsesPathID(t *testing.T) {
 
 func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodGet, "/bookings?patient_id=patient-1&status=PENDING_PAYMENT", nil)
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -232,8 +309,9 @@ func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 
 func TestCancelBookingEndpointUsesPatchSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -253,8 +331,9 @@ func TestCancelBookingEndpointMapsFailedPreconditionToConflict(t *testing.T) {
 	client := &fakeBookingClient{
 		cancelErr: status.Error(codes.FailedPrecondition, "estado de reserva invalido"),
 	}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -266,8 +345,9 @@ func TestCancelBookingEndpointMapsFailedPreconditionToConflict(t *testing.T) {
 
 func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, nil)
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodPost, "/bookings/booking-1/confirm", strings.NewReader(`{"payment_id":"payment-1"}`))
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -280,6 +360,59 @@ func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	}
 	if client.confirmReq.GetPaymentId() != "payment-1" {
 		t.Fatalf("expected payment id to be forwarded")
+	}
+}
+
+func TestStartBookingSagaEndpointTranslatesHTTPToGRPC(t *testing.T) {
+	client := &fakeBookingClient{}
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	req := httptest.NewRequest(http.MethodPost, "/booking-sagas", strings.NewReader(`{
+		"doctor_id":"doctor-1",
+		"slot_id":"slot-1",
+		"notes":"Control anual",
+		"amount":15000,
+		"currency":"CLP",
+		"payment_method_id":"method-demo"
+	}`))
+	addAuth(req)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if client.sagaReq.GetPatientId() != "patient-1" {
+		t.Fatalf("expected authenticated patient id, got %q", client.sagaReq.GetPatientId())
+	}
+	if client.sagaReq.GetPaymentMethodId() != "method-demo" {
+		t.Fatalf("expected payment method to be forwarded")
+	}
+	if !strings.Contains(rec.Body.String(), `"saga_id":"saga-1"`) {
+		t.Fatalf("expected saga id response, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"payment_status":"COMPLETED"`) {
+		t.Fatalf("expected payment status response, got %s", rec.Body.String())
+	}
+}
+
+func TestGetBookingSagaEndpointUsesPathID(t *testing.T) {
+	client := &fakeBookingClient{}
+	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	req := httptest.NewRequest(http.MethodGet, "/booking-sagas/saga-1", nil)
+	addAuth(req)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if client.getSagaReq.GetSagaId() != "saga-1" {
+		t.Fatalf("expected saga id saga-1, got %q", client.getSagaReq.GetSagaId())
+	}
+	if !strings.Contains(rec.Body.String(), `"event_type":"SAGA_STARTED"`) {
+		t.Fatalf("expected saga events response, got %s", rec.Body.String())
 	}
 }
 
@@ -306,13 +439,14 @@ func TestWriteGRPCErrorMapsFailedPreconditionToConflict(t *testing.T) {
 func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	bookingClient := &fakeBookingClient{}
 	paymentClient := &fakePaymentClient{}
-	handler := NewHandler(bookingClient, paymentClient, nil, nil)
+	handler := NewHandler(bookingClient, paymentClient, nil, fakeAuthClient{})
 	req := httptest.NewRequest(http.MethodPost, "/payments", strings.NewReader(`{
 		"booking_id":"booking-1",
 		"user_id":"patient-1",
 		"amount":15000,
 		"currency":"CLP"
 	}`))
+	addAuth(req)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -326,6 +460,10 @@ func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"payment_id":"payment-1"`) {
 		t.Fatalf("expected payment id response, got %s", rec.Body.String())
 	}
+}
+
+func addAuth(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer test-token")
 }
 
 func TestPaymentActionEndpointsUsePathIDs(t *testing.T) {

@@ -19,6 +19,8 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "")
 	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "")
 	t.Setenv("OUTBOX_MAX_ATTEMPTS", "")
+	t.Setenv("BOOKING_SAGA_MAX_RETRIES", "")
+	t.Setenv("BOOKING_SAGA_RETRY_DELAY", "")
 
 	cfg := Load()
 
@@ -67,6 +69,12 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	if cfg.OutboxMaxAttempts != 10 {
 		t.Fatalf("expected default outbox max attempts 10, got %d", cfg.OutboxMaxAttempts)
 	}
+	if cfg.SagaMaxRetries != 3 {
+		t.Fatalf("expected default saga max retries 3, got %d", cfg.SagaMaxRetries)
+	}
+	if cfg.SagaRetryDelay != 200*time.Millisecond {
+		t.Fatalf("expected default saga retry delay 200ms, got %s", cfg.SagaRetryDelay)
+	}
 }
 
 func TestLoadUsesEnvironmentOverrides(t *testing.T) {
@@ -85,6 +93,8 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "45s")
 	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "90s")
 	t.Setenv("OUTBOX_MAX_ATTEMPTS", "4")
+	t.Setenv("BOOKING_SAGA_MAX_RETRIES", "5")
+	t.Setenv("BOOKING_SAGA_RETRY_DELAY", "750ms")
 
 	cfg := Load()
 
@@ -132,5 +142,25 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.OutboxMaxAttempts != 4 {
 		t.Fatalf("expected env max attempts 4, got %d", cfg.OutboxMaxAttempts)
+	}
+	if cfg.SagaMaxRetries != 5 {
+		t.Fatalf("expected env saga max retries, got %d", cfg.SagaMaxRetries)
+	}
+	if cfg.SagaRetryDelay != 750*time.Millisecond {
+		t.Fatalf("expected env saga retry delay, got %s", cfg.SagaRetryDelay)
+	}
+}
+
+func TestLoadUsesSagaRetryDefaultsWhenOverridesAreInvalid(t *testing.T) {
+	t.Setenv("BOOKING_SAGA_MAX_RETRIES", "-1")
+	t.Setenv("BOOKING_SAGA_RETRY_DELAY", "not-a-duration")
+
+	cfg := Load()
+
+	if cfg.SagaMaxRetries != 3 {
+		t.Fatalf("expected default saga max retries for invalid env, got %d", cfg.SagaMaxRetries)
+	}
+	if cfg.SagaRetryDelay != 200*time.Millisecond {
+		t.Fatalf("expected default saga retry delay for invalid env, got %s", cfg.SagaRetryDelay)
 	}
 }

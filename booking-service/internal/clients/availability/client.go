@@ -5,8 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MedConnect/booking-service/internal/service"
 	pb "github.com/Carlos-JPS/medconnect/availability-service/pb"
+	grpcmeta "github.com/MedConnect/booking-service/internal/clients/metadata"
+	"github.com/MedConnect/booking-service/internal/service"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -37,7 +38,7 @@ func (c *GRPCClient) Close() error {
 }
 
 func (c *GRPCClient) HoldSlot(ctx context.Context, input service.HoldSlotInput) error {
-	_, err := c.client.HoldSlot(ctx, &pb.HoldSlotRequest{
+	_, err := c.client.HoldSlot(grpcmeta.ContextWithRequestID(ctx), &pb.HoldSlotRequest{
 		SlotId:    input.SlotID,
 		BookingId: input.BookingID,
 		HeldUntil: input.HeldUntil.Format(time.RFC3339),
@@ -46,7 +47,7 @@ func (c *GRPCClient) HoldSlot(ctx context.Context, input service.HoldSlotInput) 
 }
 
 func (c *GRPCClient) ReleaseHeldSlot(ctx context.Context, input service.ReleaseHeldSlotInput) error {
-	_, err := c.client.ReleaseHeldSlot(ctx, &pb.ReleaseHeldSlotRequest{
+	_, err := c.client.ReleaseHeldSlot(grpcmeta.ContextWithRequestID(ctx), &pb.ReleaseHeldSlotRequest{
 		SlotId:    input.SlotID,
 		BookingId: input.BookingID,
 	})
@@ -54,7 +55,7 @@ func (c *GRPCClient) ReleaseHeldSlot(ctx context.Context, input service.ReleaseH
 }
 
 func (c *GRPCClient) ConfirmSlotBooking(ctx context.Context, input service.ConfirmSlotBookingInput) error {
-	_, err := c.client.ConfirmSlotBooking(ctx, &pb.ConfirmSlotBookingRequest{
+	_, err := c.client.ConfirmSlotBooking(grpcmeta.ContextWithRequestID(ctx), &pb.ConfirmSlotBookingRequest{
 		SlotId:    input.SlotID,
 		BookingId: input.BookingID,
 	})
