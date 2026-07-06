@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	grpcmeta "github.com/MedConnect/api-gateway/internal/grpc/metadata"
 	pb "github.com/MedConnect/auth-service/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,17 +36,17 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) RegisterUser(ctx context.Context, req *pb.RegisterUserRequest) (*pb.RegisterUserResponse, error) {
-	return c.client.RegisterUser(ctx, req)
+	return c.client.RegisterUser(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
-	return c.client.Login(ctx, req)
+	return c.client.Login(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest) (*pb.ValidateTokenResponse, error) {
-	return c.client.ValidateToken(ctx, req)
+	return c.client.ValidateToken(grpcmeta.ContextWithRequestID(ctx), req)
 }
 
 func (c *Client) GetUserById(ctx context.Context, req *pb.GetUserByIdRequest) (*pb.GetUserByIdResponse, error) {
-	return c.client.GetUserById(ctx, req)
+	return c.client.GetUserById(grpcmeta.ContextWithRequestID(ctx), req)
 }

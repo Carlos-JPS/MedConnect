@@ -12,6 +12,7 @@ import (
 	paymentclient "github.com/MedConnect/booking-service/internal/clients/payment"
 	"github.com/MedConnect/booking-service/internal/config"
 	kafkamessaging "github.com/MedConnect/booking-service/internal/messaging/kafka"
+	"github.com/MedConnect/booking-service/internal/observability"
 	"github.com/MedConnect/booking-service/internal/outbox"
 	"github.com/MedConnect/booking-service/internal/repository/postgres"
 	"github.com/MedConnect/booking-service/internal/service"
@@ -55,7 +56,8 @@ func main() {
 		service.WithPaymentClient(paymentClient),
 		service.WithExternalCallTimeout(cfg.ExternalCallTimeout),
 	)
-	server := googlegrpc.NewServer()
+	observability.StartMetricsServer("booking-service")
+	server := googlegrpc.NewServer(googlegrpc.UnaryInterceptor(observability.UnaryServerInterceptor("booking-service")))
 	pb.RegisterBookingServiceServer(server, grpcserver.NewServer(bookingService))
 
 	if cfg.OutboxDispatcherEnabled {
