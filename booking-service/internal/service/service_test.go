@@ -13,6 +13,8 @@ type fakeRepository struct {
 	booking        Booking
 	updatedInput   UpdateBookingStatusInput
 	createErr      error
+	updateErr      error
+	updateErrs     map[Status]error
 	createCalls    int
 	updateCalls    int
 }
@@ -45,6 +47,12 @@ func (r *fakeRepository) ListBookingsByPatient(_ context.Context, patientID stri
 func (r *fakeRepository) UpdateBookingStatus(_ context.Context, input UpdateBookingStatusInput) (Booking, error) {
 	r.updateCalls++
 	r.updatedInput = input
+	if r.updateErrs != nil && r.updateErrs[input.Status] != nil {
+		return Booking{}, r.updateErrs[input.Status]
+	}
+	if r.updateErr != nil {
+		return Booking{}, r.updateErr
+	}
 	return Booking{
 		BookingID:        input.BookingID,
 		Status:           input.Status,
@@ -97,6 +105,27 @@ type fakePaymentClient struct {
 	calls     int
 }
 
+func (c *fakePaymentClient) CreatePayment(_ context.Context, input CreatePaymentInput) (PaymentDetails, error) {
+	if c.err != nil {
+		return PaymentDetails{}, c.err
+	}
+	return PaymentDetails{
+		PaymentID: "payment-1",
+		BookingID: input.BookingID,
+		UserID:    input.UserID,
+		Amount:    input.Amount,
+		Currency:  input.Currency,
+		Status:    PaymentStatusPending,
+	}, nil
+}
+
+func (c *fakePaymentClient) ProcessPayment(_ context.Context, input ProcessPaymentInput) (ProcessPaymentResult, error) {
+	if c.err != nil {
+		return ProcessPaymentResult{}, c.err
+	}
+	return ProcessPaymentResult{PaymentID: input.PaymentID, TransactionID: "txn-1", Status: c.status}, nil
+}
+
 func (c *fakePaymentClient) GetPayment(_ context.Context, paymentID string) (PaymentDetails, error) {
 	c.calls++
 	c.id = paymentID
@@ -108,6 +137,20 @@ func (c *fakePaymentClient) GetPayment(_ context.Context, paymentID string) (Pay
 		BookingID: c.bookingID,
 		Status:    c.status,
 	}, nil
+}
+
+func (c *fakePaymentClient) GetPaymentByBooking(_ context.Context, bookingID string) (PaymentDetails, error) {
+	if c.err != nil {
+		return PaymentDetails{}, c.err
+	}
+	return PaymentDetails{PaymentID: "payment-1", BookingID: bookingID, Status: c.status}, nil
+}
+
+func (c *fakePaymentClient) RefundPayment(_ context.Context, input RefundPaymentInput) (RefundDetails, error) {
+	if c.err != nil {
+		return RefundDetails{}, c.err
+	}
+	return RefundDetails{RefundID: "refund-1", PaymentID: input.PaymentID, Amount: input.Amount, Reason: input.Reason, Status: PaymentStatusRefunded}, nil
 }
 
 func TestCreateBookingPersistsPendingAppointmentWithCreatedEvent(t *testing.T) {

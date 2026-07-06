@@ -24,6 +24,8 @@ type BookingClient interface {
 	GetBooking(ctx context.Context, req *pb.GetBookingRequest) (*pb.GetBookingResponse, error)
 	ListBookingsByPatient(ctx context.Context, req *pb.ListBookingsByPatientRequest) (*pb.ListBookingsByPatientResponse, error)
 	ConfirmBooking(ctx context.Context, req *pb.ConfirmBookingRequest) (*pb.ConfirmBookingResponse, error)
+	StartBookingSaga(ctx context.Context, req *pb.StartBookingSagaRequest) (*pb.StartBookingSagaResponse, error)
+	GetBookingSaga(ctx context.Context, req *pb.GetBookingSagaRequest) (*pb.GetBookingSagaResponse, error)
 }
 
 type PaymentClient interface {
@@ -73,6 +75,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.getUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/bookings":
 		h.withAuth(h.createBooking)(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/booking-sagas":
+		h.withAuth(h.startBookingSaga)(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/booking-sagas/"):
+		h.withAuth(h.getBookingSaga)(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/bookings":
 		h.withAuth(h.listBookings)(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/bookings/"):
@@ -106,6 +112,77 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "ruta no encontrada")
 	}
+}
+
+type startBookingSagaRequest struct {
+	DoctorID        string  `json:"doctor_id"`
+	SlotID          string  `json:"slot_id"`
+	Notes           string  `json:"notes"`
+	Amount          float64 `json:"amount"`
+	Currency        string  `json:"currency"`
+	PaymentMethodID string  `json:"payment_method_id"`
+}
+
+func (h *Handler) startBookingSaga(w http.ResponseWriter, r *http.Request) {
+	patientID, ok := r.Context().Value(userIDKey).(string)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "identidad de usuario no encontrada")
+		return
+	}
+
+	var req startBookingSagaRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if req.DoctorID == "" || req.SlotID == "" || req.Amount <= 0 || req.Currency == "" || req.PaymentMethodID == "" {
+		writeError(w, http.StatusBadRequest, "doctor_id, slot_id, amount, currency y payment_method_id son obligatorios")
+		return
+	}
+
+	resp, err := h.booking.StartBookingSaga(r.Context(), &pb.StartBookingSagaRequest{
+		PatientId:       patientID,
+		DoctorId:        req.DoctorID,
+		SlotId:          req.SlotID,
+		Notes:           req.Notes,
+		Amount:          req.Amount,
+		Currency:        req.Currency,
+		PaymentMethodId: req.PaymentMethodID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"saga":           mapBookingSaga(resp.GetSaga()),
+		"booking":        mapBooking(resp.GetBooking()),
+		"payment_id":     resp.GetPaymentId(),
+		"payment_status": resp.GetPaymentStatus(),
+	})
+}
+
+func (h *Handler) getBookingSaga(w http.ResponseWriter, r *http.Request) {
+	sagaID := valueAfterPrefix(r.URL.Path, "/booking-sagas/")
+	if sagaID == "" {
+		writeError(w, http.StatusNotFound, "saga no encontrada")
+		return
+	}
+
+	resp, err := h.booking.GetBookingSaga(r.Context(), &pb.GetBookingSagaRequest{SagaId: sagaID})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	events := make([]bookingSagaEventResponse, 0, len(resp.GetEvents()))
+	for _, event := range resp.GetEvents() {
+		events = append(events, mapBookingSagaEvent(event))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"saga":   mapBookingSaga(resp.GetSaga()),
+		"events": events,
+	})
 }
 
 type createBookingRequest struct {
@@ -674,6 +751,122 @@ func valueAfterPrefix(path string, prefix string) string {
 		return ""
 	}
 	return value
+}
+
+type bookingSagaResponse struct {
+	SagaID             string `json:"saga_id"`
+	BookingID          string `json:"booking_id,omitempty"`
+	PaymentID          string `json:"payment_id,omitempty"`
+	PatientID          string `json:"patient_id,omitempty"`
+	DoctorID           string `json:"doctor_id,omitempty"`
+	SlotID             string `json:"slot_id,omitempty"`
+	Status             string `json:"status"`
+	CurrentStep        string `json:"current_step,omitempty"`
+	CompensationStatus string `json:"compensation_status,omitempty"`
+	RetryCount         int32  `json:"retry_count,omitempty"`
+	LastError          string `json:"last_error,omitempty"`
+	CreatedAt          string `json:"created_at,omitempty"`
+	UpdatedAt          string `json:"updated_at,omitempty"`
+	CompletedAt        string `json:"completed_at,omitempty"`
+}
+
+type bookingSagaEventResponse struct {
+	EventID      string         `json:"event_id"`
+	SagaID       string         `json:"saga_id"`
+	EventType    string         `json:"event_type"`
+	Step         string         `json:"step"`
+	Status       string         `json:"status"`
+	Payload      map[string]any `json:"payload,omitempty"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+	CreatedAt    string         `json:"created_at,omitempty"`
+}
+
+func mapBookingSaga(saga *pb.BookingSaga) bookingSagaResponse {
+	if saga == nil {
+		return bookingSagaResponse{}
+	}
+	return bookingSagaResponse{
+		SagaID:             saga.GetSagaId(),
+		BookingID:          saga.GetBookingId(),
+		PaymentID:          saga.GetPaymentId(),
+		PatientID:          saga.GetPatientId(),
+		DoctorID:           saga.GetDoctorId(),
+		SlotID:             saga.GetSlotId(),
+		Status:             sagaStatusToJSON(saga.GetStatus()),
+		CurrentStep:        saga.GetCurrentStep(),
+		CompensationStatus: sagaCompensationStatusToJSON(saga.GetCompensationStatus()),
+		RetryCount:         saga.GetRetryCount(),
+		LastError:          saga.GetLastError(),
+		CreatedAt:          timestampToJSON(saga.GetCreatedAt()),
+		UpdatedAt:          timestampToJSON(saga.GetUpdatedAt()),
+		CompletedAt:        timestampToJSON(saga.GetCompletedAt()),
+	}
+}
+
+func mapBookingSagaEvent(event *pb.BookingSagaEvent) bookingSagaEventResponse {
+	if event == nil {
+		return bookingSagaEventResponse{}
+	}
+	payload := map[string]any(nil)
+	if event.GetPayload() != nil {
+		payload = event.GetPayload().AsMap()
+	}
+	return bookingSagaEventResponse{
+		EventID:      event.GetEventId(),
+		SagaID:       event.GetSagaId(),
+		EventType:    event.GetEventType(),
+		Step:         event.GetStep(),
+		Status:       sagaStatusToJSON(event.GetStatus()),
+		Payload:      payload,
+		ErrorMessage: event.GetErrorMessage(),
+		CreatedAt:    timestampToJSON(event.GetCreatedAt()),
+	}
+}
+
+func sagaStatusToJSON(value pb.BookingSagaStatus) string {
+	switch value {
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_STARTED:
+		return "STARTED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_SLOT_HELD:
+		return "SLOT_HELD"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_BOOKING_CREATED:
+		return "BOOKING_CREATED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_PAYMENT_CREATED:
+		return "PAYMENT_CREATED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_PAYMENT_COMPLETED:
+		return "PAYMENT_COMPLETED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_SLOT_CONFIRMED:
+		return "SLOT_CONFIRMED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPLETED:
+		return "COMPLETED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATING:
+		return "COMPENSATING"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATED:
+		return "COMPENSATED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_FAILED:
+		return "FAILED"
+	case pb.BookingSagaStatus_BOOKING_SAGA_STATUS_COMPENSATION_FAILED:
+		return "COMPENSATION_FAILED"
+	default:
+		return "UNSPECIFIED"
+	}
+}
+
+func sagaCompensationStatusToJSON(value pb.BookingSagaCompensationStatus) string {
+	switch value {
+	case pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_NOT_REQUIRED:
+		return "NOT_REQUIRED"
+	case pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_PENDING:
+		return "PENDING"
+	case pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_IN_PROGRESS:
+		return "IN_PROGRESS"
+	case pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_COMPLETED:
+		return "COMPLETED"
+	case pb.BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_FAILED:
+		return "FAILED"
+	default:
+		return "UNSPECIFIED"
+	}
 }
 
 type bookingResponse struct {

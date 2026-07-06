@@ -114,13 +114,49 @@ const (
 	PaymentStatusPending     PaymentStatus = "PENDING"
 	PaymentStatusApproved    PaymentStatus = "APPROVED"
 	PaymentStatusCompleted   PaymentStatus = "COMPLETED"
+	PaymentStatusFailed      PaymentStatus = "FAILED"
 	PaymentStatusRejected    PaymentStatus = "REJECTED"
 	PaymentStatusRefunded    PaymentStatus = "REFUNDED"
 )
 
+type CreatePaymentInput struct {
+	BookingID string
+	UserID    string
+	Amount    float64
+	Currency  string
+}
+
+type ProcessPaymentInput struct {
+	PaymentID       string
+	PaymentMethodID string
+}
+
+type RefundPaymentInput struct {
+	PaymentID string
+	Amount    float64
+	Reason    string
+}
+
 type PaymentDetails struct {
 	PaymentID string
 	BookingID string
+	UserID    string
+	Amount    float64
+	Currency  string
+	Status    PaymentStatus
+}
+
+type ProcessPaymentResult struct {
+	PaymentID     string
+	TransactionID string
+	Status        PaymentStatus
+}
+
+type RefundDetails struct {
+	RefundID  string
+	PaymentID string
+	Amount    float64
+	Reason    string
 	Status    PaymentStatus
 }
 
@@ -137,7 +173,11 @@ type AvailabilityClient interface {
 }
 
 type PaymentClient interface {
+	CreatePayment(ctx context.Context, input CreatePaymentInput) (PaymentDetails, error)
+	ProcessPayment(ctx context.Context, input ProcessPaymentInput) (ProcessPaymentResult, error)
 	GetPayment(ctx context.Context, paymentID string) (PaymentDetails, error)
+	GetPaymentByBooking(ctx context.Context, bookingID string) (PaymentDetails, error)
+	RefundPayment(ctx context.Context, input RefundPaymentInput) (RefundDetails, error)
 }
 
 type Repository interface {
@@ -434,6 +474,22 @@ func (noopAvailabilityClient) ConfirmSlotBooking(context.Context, ConfirmSlotBoo
 
 type noopPaymentClient struct{}
 
+func (noopPaymentClient) CreatePayment(_ context.Context, input CreatePaymentInput) (PaymentDetails, error) {
+	return PaymentDetails{BookingID: input.BookingID, UserID: input.UserID, Amount: input.Amount, Currency: input.Currency, Status: PaymentStatusPending}, nil
+}
+
+func (noopPaymentClient) ProcessPayment(_ context.Context, input ProcessPaymentInput) (ProcessPaymentResult, error) {
+	return ProcessPaymentResult{PaymentID: input.PaymentID, Status: PaymentStatusApproved}, nil
+}
+
 func (noopPaymentClient) GetPayment(_ context.Context, paymentID string) (PaymentDetails, error) {
 	return PaymentDetails{PaymentID: paymentID, Status: PaymentStatusApproved}, nil
+}
+
+func (noopPaymentClient) GetPaymentByBooking(_ context.Context, bookingID string) (PaymentDetails, error) {
+	return PaymentDetails{BookingID: bookingID, Status: PaymentStatusApproved}, nil
+}
+
+func (noopPaymentClient) RefundPayment(_ context.Context, input RefundPaymentInput) (RefundDetails, error) {
+	return RefundDetails{PaymentID: input.PaymentID, Amount: input.Amount, Reason: input.Reason, Status: PaymentStatusRefunded}, nil
 }
