@@ -60,8 +60,10 @@ Se agregó:
 - Migración `000003_create_outbox_events`.
 - Tabla `outbox_events`.
 - Inserción de eventos outbox dentro de las transacciones existentes de creación, confirmación y cancelación de reservas.
-- Dispatcher interno con polling, publicación Kafka y backoff exponencial.
+- Dispatcher interno con polling, claim de filas mediante `FOR UPDATE SKIP LOCKED`, publicación Kafka y backoff exponencial.
+- Estado final `FAILED` para eventos outbox que superan `OUTBOX_MAX_ATTEMPTS`.
 - Productor Kafka basado en `franz-go`.
+- Métricas Prometheus de eventos pendientes, edad del evento pendiente más antiguo, publicaciones exitosas, fallos y fallos finales.
 
 ### `notification-service`
 
@@ -73,6 +75,7 @@ Nuevo microservicio Go que:
 - Usa `event_id` único para idempotencia.
 - Publica en `medconnect.booking.events.dlq.v1` cuando el mensaje es inválido o se agotan los reintentos.
 - Confirma offset manualmente solo después de persistir o enviar a DLQ.
+- Expone métricas Prometheus de eventos insertados, duplicados y enviados a DLQ.
 
 ## 5. Tópicos Kafka
 
@@ -115,6 +118,8 @@ Eventos soportados:
 - `booking.cancelled`
 - `booking.expired`
 
+Nota sobre `booking.expired`: el contrato y el consumidor lo soportan para mantener compatibilidad con una futura expiración automática de reservas. En el flujo actual demostrado por la API se generan `booking.created`, `booking.confirmed` y `booking.cancelled`; `booking.expired` no se genera automáticamente todavía.
+
 ## 7. Justificación técnica
 
 ### Outbox transaccional
@@ -149,31 +154,64 @@ La DLQ evita que un mensaje inválido bloquee indefinidamente el consumo de even
 - `dlq_reason`
 - `source_topic`
 
+### Alternativas descartadas
+
+| Alternativa | Por qué se descartó |
+|---|---|
+| Llamada gRPC directa desde `booking-service` a `notification-service` | Habría acoplado el flujo de reserva a la disponibilidad de notificaciones. Si notification-service cae, la reserva podría degradarse por una responsabilidad secundaria. |
+| Publicar directo a Kafka después del commit de PostgreSQL | Puede perder eventos si la aplicación cae entre guardar la reserva y publicar el mensaje. El outbox transaccional evita esa ventana de inconsistencia. |
+| Auto-commit de offsets en el consumidor | Podía confirmar un mensaje antes de persistir la notificación. Se eligió commit manual para confirmar solo después de un efecto durable o DLQ. |
+| Exactly-once con transacciones Kafka | Aumentaba complejidad para un caso de notificaciones simuladas. Se eligió at-least-once más idempotencia por `event_id`, suficiente para evitar notificaciones duplicadas. |
+
 ## 8. Comportamiento ante fallas
 
 | Escenario | Comportamiento |
 |---|---|
 | Kafka caído al crear reserva | La reserva se persiste; el evento queda pendiente en `outbox_events`. |
 | Kafka vuelve a estar disponible | El dispatcher publica los eventos pendientes. |
+| Múltiples dispatchers de booking activos | Cada dispatcher reclama filas con `FOR UPDATE SKIP LOCKED` y `locked_until`, evitando que dos instancias procesen el mismo evento al mismo tiempo. |
+| Publicación falla repetidamente | Se incrementa `attempts`; al superar `OUTBOX_MAX_ATTEMPTS`, el evento queda en estado `FAILED` con `last_error`. |
 | `notification-service` caído | Kafka retiene los eventos y el consumer group retoma al reiniciar. |
 | Mensaje duplicado | `notification_db.notifications.event_id` evita duplicar la notificación. |
 | Mensaje inválido | Se envía a DLQ y se confirma el offset. |
 | PostgreSQL de notificaciones falla | El processor reintenta; si agota reintentos, envía a DLQ. |
 
-## 9. Archivos principales
+## 9. Métricas agregadas
+
+`booking-service` expone en `/metrics`:
+
+- `medconnect_booking_outbox_published_total`
+- `medconnect_booking_outbox_publish_failed_total`
+- `medconnect_booking_outbox_final_failed_total`
+- `medconnect_booking_outbox_pending`
+- `medconnect_booking_outbox_oldest_pending_age_seconds`
+- `medconnect_booking_outbox_final_failed`
+
+`notification-service` expone en `/metrics`:
+
+- `medconnect_notification_events_processed_total{result="inserted|duplicate|dlq|error"}`
+- `medconnect_notification_dlq_messages_total`
+
+Prometheus scrapea `notification-service:9090` además de los servicios existentes.
+
+## 10. Archivos principales
 
 | Archivo | Rol |
 |---|---|
 | `booking-service/migrations/000003_create_outbox_events.up.sql` | Crea tabla outbox. |
 | `booking-service/internal/repository/postgres/outbox.go` | Construye eventos y administra outbox. |
 | `booking-service/internal/outbox/dispatcher.go` | Publica eventos pendientes con reintentos. |
+| `booking-service/internal/outbox/metrics.go` | Métricas Prometheus del outbox. |
 | `booking-service/internal/messaging/kafka/publisher.go` | Productor Kafka. |
+| `booking-service/internal/messaging/kafka/publisher_integration_test.go` | Smoke test opcional contra Kafka real. |
 | `notification-service/internal/consumer/kafka.go` | Consumidor Kafka, commit manual y DLQ. |
+| `notification-service/internal/consumer/kafka_integration_test.go` | Smoke test opcional de publicación a DLQ contra Kafka real. |
 | `notification-service/internal/processor/processor.go` | Validación, notificación simulada, reintentos. |
 | `notification-service/internal/repository/postgres/repository.go` | Persistencia idempotente. |
+| `notification-service/internal/observability/metrics.go` | Métricas Prometheus de procesamiento y DLQ. |
 | `notification-service/db/init.sql` | Esquema de notificaciones. |
 
-## 10. Cómo ejecutar
+## 11. Cómo ejecutar
 
 Desde `MedConnect/`:
 
@@ -181,10 +219,17 @@ Desde `MedConnect/`:
 docker compose up --build
 ```
 
+Si ya existía un volumen de `booking_db` antes de agregar `status`, `locked_until` y `failed_at` al outbox, recrear los volúmenes para que Docker ejecute nuevamente las migraciones de inicialización:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 Para revisar eventos pendientes en el outbox:
 
 ```bash
-docker compose exec booking_db psql -U booking -d booking_db -c "SELECT id, event_type, attempts, published_at, last_error FROM outbox_events ORDER BY created_at DESC;"
+docker compose exec booking_db psql -U booking -d booking_db -c "SELECT id, event_type, status, attempts, published_at, failed_at, last_error FROM outbox_events ORDER BY created_at DESC;"
 ```
 
 Para revisar notificaciones generadas:
@@ -199,7 +244,9 @@ Para revisar tópicos:
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 ```
 
-## 11. Verificación ejecutada
+## 12. Verificación ejecutada
+
+Evidencia local tomada el 2026-07-06.
 
 Pruebas unitarias:
 
@@ -208,9 +255,30 @@ cd booking-service
 go test ./...
 ```
 
+Salida resumida:
+
+```text
+ok github.com/MedConnect/booking-service/internal/config
+ok github.com/MedConnect/booking-service/internal/messaging/kafka
+ok github.com/MedConnect/booking-service/internal/outbox
+ok github.com/MedConnect/booking-service/internal/repository/postgres
+ok github.com/MedConnect/booking-service/internal/service
+ok github.com/MedConnect/booking-service/internal/transport/grpc
+ok github.com/MedConnect/booking-service/pb
+```
+
 ```bash
 cd notification-service
 go test ./...
+```
+
+Salida resumida:
+
+```text
+ok github.com/MedConnect/notification-service/internal/config
+ok github.com/MedConnect/notification-service/internal/consumer
+ok github.com/MedConnect/notification-service/internal/processor
+ok github.com/MedConnect/notification-service/internal/repository/postgres
 ```
 
 Validación de Compose:
@@ -219,24 +287,55 @@ Validación de Compose:
 docker compose config
 ```
 
+Resultado: configuración válida; Compose resolvió servicios, redes, volúmenes y variables sin errores.
+
+Listado de tópicos observado con el stack corriendo:
+
+```text
+__consumer_offsets
+medconnect.booking.events.dlq.v1
+medconnect.booking.events.v1
+```
+
+Consulta de outbox observada antes de generar una reserva de demo:
+
+```text
+ id | event_type | attempts | published_at | last_error
+----+------------+----------+--------------+------------
+(0 rows)
+```
+
+Consulta de notificaciones observada antes de generar una reserva de demo:
+
+```text
+ event_id | booking_id | event_type | recipient_id | message | created_at
+----------+------------+------------+--------------+---------+------------
+(0 rows)
+```
+
+Para una demo completa, crear/cancelar/confirmar una reserva desde el API Gateway y repetir las dos consultas anteriores. En ese caso, `outbox_events` debe mostrar el evento publicado con `status = 'PUBLISHED'` y `notifications` debe mostrar la notificación persistida.
+
+Pruebas de integración opcionales contra Kafka real:
+
+```bash
+cd booking-service
+KAFKA_INTEGRATION=1 KAFKA_INTEGRATION_BROKERS=localhost:9092 go test ./internal/messaging/kafka -run TestPublisherPublishesToRealKafka
+```
+
+```bash
+cd notification-service
+KAFKA_INTEGRATION=1 KAFKA_INTEGRATION_BROKERS=localhost:9092 go test ./internal/consumer -run TestDLQPublisherPublishesToRealKafka
+```
+
 La construcción Docker de `booking-service` y `notification-service` depende de que Docker Desktop esté activo localmente.
 
-## 12. Limitaciones asumidas
+## 13. Limitaciones asumidas y trade-offs aceptados
 
-- Kafka está configurado con un solo broker local y replication factor 1.
-- No se implementa correo, SMS ni push real; la notificación es simulada y persistida.
-- No se agrega Schema Registry; el contrato se versiona con `schema_version`.
-- No se agregan métricas ni trazabilidad distribuida.
-- No se implementa TLS/SASL para Kafka porque el entorno es local de curso.
-- No se modifica el frontend ni se agrega endpoint público para notificaciones.
+- Kafka está configurado con un solo broker local y replication factor 1. Se aceptó porque se busca demostrar integración y tolerancia a fallos de aplicación, no alta disponibilidad real de Kafka.
+- No se implementa correo, SMS ni push real; la notificación es simulada y persistida. Se aceptó porque el objetivo es el flujo asíncrono y la idempotencia, no la integración con proveedores externos.
+- No se agrega Schema Registry; el contrato se versiona con `schema_version`. Se aceptó para evitar infraestructura adicional en una demo local, manteniendo una base para evolucionar contratos.
+- No se implementa TLS/SASL para Kafka porque el entorno es de demo local. En producción se requeriría autenticación, autorización y cifrado.
+- No se modifica el frontend ni se agrega endpoint público para notificaciones. Se aceptó para mantener el bloque acotado a backend y demostrar el resultado con consultas SQL.
+- `booking.expired` está soportado por contrato, pero no se genera automáticamente en el flujo actual. Se dejó preparado para una futura tarea programada de expiración de reservas.
+- El outbox usa `locked_until` como lease. Si una instancia cae después de publicar y antes de marcar `PUBLISHED`, el evento puede republicarse al expirar el lease; esto es consistente con at-least-once y se controla con idempotencia en el consumidor.
 
-## 13. Relación con la rúbrica
-
-| Criterio | Evidencia implementada |
-|---|---|
-| Comunicación asíncrona | Kafka con tópico de eventos de reservas y consumidor independiente. |
-| Desacoplamiento | Booking no llama directamente a notification-service. |
-| Tolerancia a fallos | Outbox, reintentos, DLQ e idempotencia. |
-| Escalabilidad | Tópico principal con 3 particiones y consumer group. |
-| Documentación técnica | Este documento describe arquitectura, contrato, decisiones y pruebas. |
-| Defensa individual | La implementación tiene decisiones técnicas defendibles: outbox, at-least-once, commit manual e idempotencia. |
