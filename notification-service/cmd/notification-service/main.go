@@ -9,6 +9,7 @@ import (
 
 	"github.com/MedConnect/notification-service/internal/config"
 	"github.com/MedConnect/notification-service/internal/consumer"
+	"github.com/MedConnect/notification-service/internal/observability"
 	"github.com/MedConnect/notification-service/internal/processor"
 	"github.com/MedConnect/notification-service/internal/repository/postgres"
 )
@@ -23,6 +24,7 @@ func main() {
 		log.Fatalf("error al inicializar repositorio de notificaciones: %v", err)
 	}
 	defer repo.Close()
+	observability.StartMetricsServer("notification-service")
 
 	dlqPublisher, err := consumer.NewDLQPublisher(cfg.KafkaBrokers, cfg.DLQTopic)
 	if err != nil {

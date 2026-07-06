@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MedConnect/notification-service/internal/domain"
+	"github.com/MedConnect/notification-service/internal/observability"
 )
 
 const (
@@ -104,6 +105,11 @@ func (p *Processor) Process(ctx context.Context, message Message) error {
 			if p.notificationLog && !inserted {
 				p.logger.Printf("notification-service: evento duplicado ignorado event_id=%s", notification.EventID)
 			}
+			if inserted {
+				observability.RecordNotificationProcessed("inserted")
+			} else {
+				observability.RecordNotificationProcessed("duplicate")
+			}
 			return nil
 		}
 		lastErr = err
@@ -185,11 +191,15 @@ func isSupportedEventType(eventType string) bool {
 
 func (p *Processor) publishDLQ(ctx context.Context, message Message, err error) error {
 	if p.dlq == nil {
+		observability.RecordNotificationProcessed("error")
 		return err
 	}
 	if publishErr := p.dlq.Publish(ctx, message, err.Error()); publishErr != nil {
+		observability.RecordNotificationProcessed("error")
 		return fmt.Errorf("publicar en DLQ: %w", publishErr)
 	}
+	observability.RecordNotificationProcessed("dlq")
+	observability.RecordDLQMessage()
 	p.logger.Printf("notification-service: mensaje enviado a DLQ: %v", err)
 	return nil
 }
