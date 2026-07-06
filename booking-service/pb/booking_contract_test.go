@@ -49,6 +49,54 @@ func TestBookingEventContractExists(t *testing.T) {
 	assertTimestampField(t, fields, "created_at")
 }
 
+func TestBookingSagaContractUsesEnumsAndTimestamps(t *testing.T) {
+	if BookingSagaStatus_BOOKING_SAGA_STATUS_COMPLETED.String() == "" {
+		t.Fatal("expected booking saga status enum values to exist")
+	}
+	if BookingSagaCompensationStatus_BOOKING_SAGA_COMPENSATION_STATUS_COMPLETED.String() == "" {
+		t.Fatal("expected booking saga compensation status enum values to exist")
+	}
+
+	fields := (&BookingSaga{}).ProtoReflect().Descriptor().Fields()
+
+	statusField := fields.ByName("status")
+	if statusField == nil {
+		t.Fatal("expected booking_saga.status field to exist")
+	}
+	if statusField.Kind() != protoreflect.EnumKind {
+		t.Fatalf("expected booking_saga.status to be enum, got %s", statusField.Kind())
+	}
+	if string(statusField.Enum().FullName()) != "booking.BookingSagaStatus" {
+		t.Fatalf("expected booking_saga.status to use booking.BookingSagaStatus, got %s", statusField.Enum().FullName())
+	}
+
+	compensationField := fields.ByName("compensation_status")
+	if compensationField == nil {
+		t.Fatal("expected booking_saga.compensation_status field to exist")
+	}
+	if compensationField.Kind() != protoreflect.EnumKind {
+		t.Fatalf("expected booking_saga.compensation_status to be enum, got %s", compensationField.Kind())
+	}
+
+	assertTimestampField(t, fields, "created_at")
+	assertTimestampField(t, fields, "updated_at")
+	assertTimestampField(t, fields, "completed_at")
+}
+
+func TestBookingSagaEventContractExists(t *testing.T) {
+	fields := (&BookingSagaEvent{}).ProtoReflect().Descriptor().Fields()
+
+	statusField := fields.ByName("status")
+	if statusField == nil {
+		t.Fatal("expected booking_saga_event.status field to exist")
+	}
+	if statusField.Kind() != protoreflect.EnumKind {
+		t.Fatalf("expected booking_saga_event.status to be enum, got %s", statusField.Kind())
+	}
+
+	assertTimestampField(t, fields, "created_at")
+}
+
 func assertTimestampField(t *testing.T, fields protoreflect.FieldDescriptors, name protoreflect.Name) {
 	t.Helper()
 

@@ -24,6 +24,30 @@ enum BookingEventType {
   BOOKING_EVENT_TYPE_EXPIRED = 5;
 }
 
+enum BookingSagaStatus {
+  BOOKING_SAGA_STATUS_UNSPECIFIED = 0;
+  BOOKING_SAGA_STATUS_STARTED = 1;
+  BOOKING_SAGA_STATUS_SLOT_HELD = 2;
+  BOOKING_SAGA_STATUS_BOOKING_CREATED = 3;
+  BOOKING_SAGA_STATUS_PAYMENT_CREATED = 4;
+  BOOKING_SAGA_STATUS_PAYMENT_COMPLETED = 5;
+  BOOKING_SAGA_STATUS_SLOT_CONFIRMED = 6;
+  BOOKING_SAGA_STATUS_COMPLETED = 7;
+  BOOKING_SAGA_STATUS_COMPENSATING = 8;
+  BOOKING_SAGA_STATUS_COMPENSATED = 9;
+  BOOKING_SAGA_STATUS_FAILED = 10;
+  BOOKING_SAGA_STATUS_COMPENSATION_FAILED = 11;
+}
+
+enum BookingSagaCompensationStatus {
+  BOOKING_SAGA_COMPENSATION_STATUS_UNSPECIFIED = 0;
+  BOOKING_SAGA_COMPENSATION_STATUS_NOT_REQUIRED = 1;
+  BOOKING_SAGA_COMPENSATION_STATUS_PENDING = 2;
+  BOOKING_SAGA_COMPENSATION_STATUS_IN_PROGRESS = 3;
+  BOOKING_SAGA_COMPENSATION_STATUS_COMPLETED = 4;
+  BOOKING_SAGA_COMPENSATION_STATUS_FAILED = 5;
+}
+
 message Booking {
   string booking_id = 1;
   string patient_id = 2;
@@ -46,6 +70,34 @@ message BookingEvent {
   BookingEventType event_type = 3;
   google.protobuf.Struct payload = 4;
   google.protobuf.Timestamp created_at = 5;
+}
+
+message BookingSaga {
+  string saga_id = 1;
+  string booking_id = 2;
+  string payment_id = 3;
+  string patient_id = 4;
+  string doctor_id = 5;
+  string slot_id = 6;
+  BookingSagaStatus status = 7;
+  string current_step = 8;
+  BookingSagaCompensationStatus compensation_status = 9;
+  int32 retry_count = 10;
+  string last_error = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  google.protobuf.Timestamp completed_at = 14;
+}
+
+message BookingSagaEvent {
+  string event_id = 1;
+  string saga_id = 2;
+  string event_type = 3;
+  string step = 4;
+  BookingSagaStatus status = 5;
+  google.protobuf.Struct payload = 6;
+  string error_message = 7;
+  google.protobuf.Timestamp created_at = 8;
 }
 
 message CreateBookingRequest {
@@ -96,10 +148,38 @@ message ConfirmBookingResponse {
   google.protobuf.Timestamp updated_at = 3;
 }
 
+message StartBookingSagaRequest {
+  string patient_id = 1;
+  string doctor_id = 2;
+  string slot_id = 3;
+  string notes = 4;
+  double amount = 5;
+  string currency = 6;
+  string payment_method_id = 7;
+}
+
+message StartBookingSagaResponse {
+  BookingSaga saga = 1;
+  Booking booking = 2;
+  string payment_id = 3;
+  string payment_status = 4;
+}
+
+message GetBookingSagaRequest {
+  string saga_id = 1;
+}
+
+message GetBookingSagaResponse {
+  BookingSaga saga = 1;
+  repeated BookingSagaEvent events = 2;
+}
+
 service BookingService {
   rpc CreateBooking         (CreateBookingRequest)         returns (CreateBookingResponse);
   rpc CancelBooking         (CancelBookingRequest)         returns (CancelBookingResponse);
   rpc GetBooking            (GetBookingRequest)            returns (GetBookingResponse);
   rpc ListBookingsByPatient (ListBookingsByPatientRequest) returns (ListBookingsByPatientResponse);
   rpc ConfirmBooking        (ConfirmBookingRequest)        returns (ConfirmBookingResponse);
+  rpc StartBookingSaga      (StartBookingSagaRequest)      returns (StartBookingSagaResponse);
+  rpc GetBookingSaga        (GetBookingSagaRequest)        returns (GetBookingSagaResponse);
 }
