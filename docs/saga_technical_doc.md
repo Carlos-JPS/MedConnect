@@ -4,7 +4,7 @@
 **Servicios involucrados:** `api-gateway`, `booking-service`, `availability-service`, `payment-service`  
 **Servicio orquestador:** `booking-service`  
 **Modelo elegido:** SAGA orquestada  
-**Estado:** orquestador de dominio y contrato gRPC SAGA implementados; repositorio PostgreSQL y endpoints REST pendientes  
+**Estado:** orquestador de dominio, contrato gRPC y endpoints REST SAGA implementados; repositorio PostgreSQL pendiente  
 **Base:** `rubrica_entrega2.md`, `README.md`, `docs/sharding_technical_doc.md`, `docs/observabilidad_technical_doc.md`  
 **Ultima actualizacion:** 2026-07-06
 
@@ -303,3 +303,4 @@ Casos a demostrar:
 | 2026-07-06 | Se extiende el cliente interno de `payment-service` en `booking-service` con `CreatePayment`, `ProcessPayment`, `RefundPayment` y `GetPaymentByBooking`. | Completado |
 | 2026-07-06 | Se implementa el orquestador SAGA en `booking-service/internal/service` con interfaz `SagaRepository`, flujo feliz, compensaciones y tests unitarios. | Completado |
 | 2026-07-06 | Se agregan RPC `StartBookingSaga` y `GetBookingSaga` al contrato `booking.proto` y se regeneran `booking.pb.go` / `booking_grpc.pb.go` con `protoc`. | Completado |
+| 2026-07-06 | Se agregan endpoints REST autenticados `POST /booking-sagas` y `GET /booking-sagas/{saga_id}` en `api-gateway`. | Completado |
