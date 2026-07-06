@@ -300,3 +300,4 @@ Casos a demostrar:
 | 2026-07-06 | Se crea documento tecnico vivo inicial. | Completado |
 | 2026-07-06 | Se planifica persistencia de `booking_sagas` y `booking_saga_events`. | Completado |
 | 2026-07-06 | Se agregan `BOOKING_SAGA_MAX_RETRIES` y `BOOKING_SAGA_RETRY_DELAY` a la configuracion de `booking-service`. | Completado |
+| 2026-07-06 | Se extiende el cliente interno de `payment-service` en `booking-service` con `CreatePayment`, `ProcessPayment`, `RefundPayment` y `GetPaymentByBooking`. | Completado |
