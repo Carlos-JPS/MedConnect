@@ -3,6 +3,7 @@ package domain
 import "time"
 
 type Notification struct {
+	ID          int64
 	EventID     string
 	BookingID   string
 	EventType   string
@@ -12,4 +13,5 @@ type Notification struct {
 	Status      string
 	Payload     []byte
 	CreatedAt   time.Time
+	ReadAt      *time.Time
 }

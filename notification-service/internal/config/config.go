@@ -7,6 +7,8 @@ import (
 )
 
 const (
+	defaultHTTPHost        = "0.0.0.0"
+	defaultHTTPPort        = "8081"
 	defaultDatabaseDSN     = "postgres://notification:notification_password@notification_db:5432/notification_db?sslmode=disable"
 	defaultKafkaBrokers    = "kafka:9092"
 	defaultBookingTopic    = "medconnect.booking.events.v1"
@@ -17,6 +19,8 @@ const (
 )
 
 type Config struct {
+	HTTPHost        string
+	HTTPPort        string
 	DatabaseDSN     string
 	KafkaBrokers    []string
 	BookingTopic    string
@@ -28,6 +32,8 @@ type Config struct {
 
 func Load() Config {
 	return Config{
+		HTTPHost:        envOrDefault("NOTIFICATION_HTTP_HOST", defaultHTTPHost),
+		HTTPPort:        envOrDefault("NOTIFICATION_HTTP_PORT", defaultHTTPPort),
 		DatabaseDSN:     envOrDefault("NOTIFICATION_DB_DSN", defaultDatabaseDSN),
 		KafkaBrokers:    csvEnvOrDefault("KAFKA_BROKERS", defaultKafkaBrokers),
 		BookingTopic:    envOrDefault("BOOKING_EVENTS_TOPIC", defaultBookingTopic),

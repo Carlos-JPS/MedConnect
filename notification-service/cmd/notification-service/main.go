@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/MedConnect/notification-service/internal/config"
 	"github.com/MedConnect/notification-service/internal/consumer"
+	"github.com/MedConnect/notification-service/internal/httpapi"
 	"github.com/MedConnect/notification-service/internal/observability"
 	"github.com/MedConnect/notification-service/internal/processor"
 	"github.com/MedConnect/notification-service/internal/repository/postgres"
@@ -25,6 +29,34 @@ func main() {
 	}
 	defer repo.Close()
 	observability.StartMetricsServer("notification-service")
+
+	httpServer := &http.Server{
+		Addr: net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort),
+		Handler: httpapi.NewServer(
+			repo,
+			httpapi.Config{
+				KafkaBrokers:  cfg.KafkaBrokers,
+				BookingTopic:  cfg.BookingTopic,
+				DLQTopic:      cfg.DLQTopic,
+				ConsumerGroup: cfg.ConsumerGroup,
+			},
+			log.Default(),
+		),
+	}
+	go func() {
+		log.Printf("notification-service HTTP interno escuchando en %s", httpServer.Addr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("error al iniciar HTTP interno de notificaciones: %v", err)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("error al cerrar HTTP interno de notificaciones: %v", err)
+		}
+	}()
 
 	dlqPublisher, err := consumer.NewDLQPublisher(cfg.KafkaBrokers, cfg.DLQTopic)
 	if err != nil {

@@ -4,6 +4,8 @@ import "testing"
 
 func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	t.Setenv("NOTIFICATION_DB_DSN", "")
+	t.Setenv("NOTIFICATION_HTTP_HOST", "")
+	t.Setenv("NOTIFICATION_HTTP_PORT", "")
 	t.Setenv("KAFKA_BROKERS", "")
 	t.Setenv("BOOKING_EVENTS_TOPIC", "")
 	t.Setenv("BOOKING_EVENTS_DLQ_TOPIC", "")
@@ -13,6 +15,12 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 
 	cfg := Load()
 
+	if cfg.HTTPHost != defaultHTTPHost {
+		t.Fatalf("expected default http host, got %q", cfg.HTTPHost)
+	}
+	if cfg.HTTPPort != defaultHTTPPort {
+		t.Fatalf("expected default http port, got %q", cfg.HTTPPort)
+	}
 	if cfg.DatabaseDSN != defaultDatabaseDSN {
 		t.Fatalf("expected default database dsn, got %q", cfg.DatabaseDSN)
 	}
@@ -38,6 +46,8 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 
 func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("NOTIFICATION_DB_DSN", "postgres://custom")
+	t.Setenv("NOTIFICATION_HTTP_HOST", "127.0.0.1")
+	t.Setenv("NOTIFICATION_HTTP_PORT", "9095")
 	t.Setenv("KAFKA_BROKERS", "kafka-1:9092, kafka-2:9092")
 	t.Setenv("BOOKING_EVENTS_TOPIC", "booking.custom")
 	t.Setenv("BOOKING_EVENTS_DLQ_TOPIC", "booking.custom.dlq")
@@ -47,6 +57,12 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 
 	cfg := Load()
 
+	if cfg.HTTPHost != "127.0.0.1" {
+		t.Fatalf("expected env http host, got %q", cfg.HTTPHost)
+	}
+	if cfg.HTTPPort != "9095" {
+		t.Fatalf("expected env http port, got %q", cfg.HTTPPort)
+	}
 	if cfg.DatabaseDSN != "postgres://custom" {
 		t.Fatalf("expected env database dsn, got %q", cfg.DatabaseDSN)
 	}

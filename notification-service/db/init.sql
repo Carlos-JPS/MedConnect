@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     message TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
     payload JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    read_at TIMESTAMPTZ NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_booking
@@ -16,3 +17,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_booking
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient
     ON notifications (recipient_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_unread
+    ON notifications (recipient_id, read_at, created_at);
