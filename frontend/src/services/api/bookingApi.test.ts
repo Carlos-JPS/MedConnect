@@ -66,6 +66,22 @@ describe("bookingApi", () => {
     );
   });
 
+  it("adds bearer token when an access token provider is configured", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(await jsonResponse({ bookings: [] }));
+
+    const api = createBookingApi("http://gateway.test", () => "access-token-1");
+    await api.listBookings("patient-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://gateway.test/bookings?patient_id=patient-1",
+      {
+        method: "GET",
+        headers: { Authorization: "Bearer access-token-1" },
+      },
+    );
+  });
+
   it("lists, retrieves, confirms and cancels patient bookings", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock

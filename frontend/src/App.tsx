@@ -1,20 +1,29 @@
 import {
   Activity,
+  Bell,
+  BellRing,
+  Bug,
   CalendarCheck2,
   CalendarDays,
   CalendarPlus,
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Database,
+  Eye,
   FileSearch,
   Loader2,
+  LogIn,
   MapPin,
+  MailCheck,
   RefreshCw,
   ShieldCheck,
   Stethoscope,
+  UserPlus,
   XCircle,
 } from "lucide-react";
 import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { createAuthApi } from "./services/api/authApi";
 import {
   Booking,
   BookingActionResult,
@@ -22,6 +31,11 @@ import {
   BookingStatus,
   createBookingApi,
 } from "./services/api/bookingApi";
+import {
+  Notification,
+  NotificationDevStatus,
+  createNotificationApi,
+} from "./services/api/notificationApi";
 import "./styles.css";
 
 type DemoSlot = {
@@ -36,6 +50,8 @@ type DemoSlot = {
 };
 
 const demoPatientId = "46bd4a6f-6a4d-4e81-ae7c-c9d7ac05b235";
+const demoAuthEmail = "paciente.kafka@medconnect.local";
+const demoAuthPassword = "MedConnect2026!";
 
 const demoSlots: DemoSlot[] = [
   {
@@ -78,9 +94,13 @@ const statusOptions: Array<{ value: BookingStatus | ""; label: string }> = [
   { value: "EXPIRED", label: "Expiradas" },
 ];
 
-const api = createBookingApi();
-
 function App() {
+  const [authEmail, setAuthEmail] = useState(demoAuthEmail);
+  const [authPassword, setAuthPassword] = useState(demoAuthPassword);
+  const [authFullName, setAuthFullName] = useState("Paciente Kafka Demo");
+  const [accessToken, setAccessToken] = useState("");
+  const [authUserId, setAuthUserId] = useState("");
+  const [authRole, setAuthRole] = useState("");
   const [patientId, setPatientId] = useState(demoPatientId);
   const [statusFilter, setStatusFilter] = useState<BookingStatus | "">("");
   const [doctorId, setDoctorId] = useState(demoSlots[0].doctorId);
@@ -88,6 +108,9 @@ function App() {
   const [notes, setNotes] = useState("Paciente solicita confirmar hora desde portal web.");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [detail, setDetail] = useState<BookingDetail | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [devStatus, setDevStatus] = useState<NotificationDevStatus | null>(null);
   const [lookupBookingId, setLookupBookingId] = useState("");
   const [paymentId, setPaymentId] = useState("");
   const [cancelReason, setCancelReason] = useState("Paciente solicita reagendar.");
@@ -99,6 +122,12 @@ function App() {
     () => demoSlots.find((slot) => slot.id === slotId),
     [slotId],
   );
+  const authApi = useMemo(() => createAuthApi(), []);
+  const bookingApi = useMemo(() => createBookingApi(undefined, () => accessToken), [accessToken]);
+  const notificationApi = useMemo(
+    () => createNotificationApi(undefined, () => accessToken),
+    [accessToken],
+  );
 
   function selectSlot(slot: DemoSlot) {
     setSlotId(slot.id);
@@ -107,10 +136,37 @@ function App() {
     setError("");
   }
 
+  async function registerPatient() {
+    await run("register", async () => {
+      const result = await authApi.register({
+        email: authEmail.trim(),
+        password: authPassword,
+        full_name: authFullName.trim() || "Paciente Demo",
+        role: "PATIENT",
+      });
+      setPatientId(result.user_id);
+      setMessage(`Usuario registrado: ${result.user_id}. Ahora inicia sesión para obtener token.`);
+    });
+  }
+
+  async function loginPatient() {
+    await run("login", async () => {
+      const result = await authApi.login(authEmail.trim(), authPassword);
+      setAccessToken(result.access_token);
+      setAuthUserId(result.user_id);
+      setAuthRole(result.role);
+      setPatientId(result.user_id);
+      setMessage(`Sesión iniciada como ${result.role}. El gateway usará user_id=${result.user_id}.`);
+    });
+  }
+
   async function createBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!requireSession()) {
+      return;
+    }
     await run("create", async () => {
-      const result = await api.createBooking({
+      const result = await bookingApi.createBooking({
         patient_id: patientId,
         doctor_id: doctorId,
         slot_id: slotId,
@@ -122,21 +178,27 @@ function App() {
   }
 
   async function loadBookings() {
+    if (!requireSession()) {
+      return;
+    }
     await run("list", async () => {
-      const result = await api.listBookings(patientId, statusFilter);
+      const result = await bookingApi.listBookings(patientId, statusFilter);
       setBookings(result.bookings);
       setMessage(`Reservas cargadas para ${patientId}.`);
     });
   }
 
   async function loadDetail(bookingId = lookupBookingId) {
+    if (!requireSession()) {
+      return;
+    }
     if (!bookingId) {
       setError("Ingresa un booking_id para consultar el detalle.");
       return;
     }
 
     await run("detail", async () => {
-      const result = await api.getBooking(bookingId);
+      const result = await bookingApi.getBooking(bookingId);
       setDetail(result);
       setLookupBookingId(result.booking.booking_id);
       setMessage(`Detalle cargado para ${result.booking.booking_id}.`);
@@ -144,23 +206,73 @@ function App() {
   }
 
   async function confirmBooking(bookingId: string) {
+    if (!requireSession()) {
+      return;
+    }
     if (!paymentId.trim()) {
       setError("Ingresa un payment_id asociado a esta reserva antes de confirmar.");
       return;
     }
 
     await run(`confirm-${bookingId}`, async () => {
-      const result = await api.confirmBooking(bookingId, paymentId.trim());
+      const result = await bookingApi.confirmBooking(bookingId, paymentId.trim());
       applyActionResult(result);
       setMessage(`Reserva confirmada: ${bookingId}.`);
     });
   }
 
   async function cancelBooking(bookingId: string) {
+    if (!requireSession()) {
+      return;
+    }
     await run(`cancel-${bookingId}`, async () => {
-      const result = await api.cancelBooking(bookingId, cancelReason);
+      const result = await bookingApi.cancelBooking(bookingId, cancelReason);
       applyActionResult(result);
       setMessage(`Reserva cancelada: ${bookingId}.`);
+    });
+  }
+
+  async function loadNotifications() {
+    if (!requireSession()) {
+      return;
+    }
+    await run("notifications", async () => {
+      const [listResult, countResult] = await Promise.all([
+        notificationApi.listNotifications(10),
+        notificationApi.getUnreadCount(),
+      ]);
+      setNotifications(listResult.notifications);
+      setUnreadCount(countResult.unread_count);
+      setMessage(`Notificaciones cargadas: ${listResult.notifications.length}.`);
+    });
+  }
+
+  async function markNotificationRead(notificationId: number) {
+    if (!requireSession()) {
+      return;
+    }
+    await run(`notification-read-${notificationId}`, async () => {
+      const result = await notificationApi.markRead(notificationId);
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === notificationId
+            ? { ...notification, read_at: result.read_at || new Date().toISOString() }
+            : notification,
+        ),
+      );
+      setUnreadCount((current) => Math.max(current - 1, 0));
+      setMessage(`Notificación ${notificationId} marcada como leída.`);
+    });
+  }
+
+  async function loadNotificationDevStatus() {
+    if (!requireSession()) {
+      return;
+    }
+    await run("notification-dev", async () => {
+      const result = await notificationApi.getDevStatus(5);
+      setDevStatus(result);
+      setMessage("Panel dev actualizado con evidencia del consumidor Kafka.");
     });
   }
 
@@ -175,6 +287,14 @@ function App() {
     } finally {
       setLoading("");
     }
+  }
+
+  function requireSession() {
+    if (accessToken) {
+      return true;
+    }
+    setError("Inicia sesión para llamar endpoints protegidos del API Gateway.");
+    return false;
   }
 
   function applyActionResult(result: BookingActionResult) {
@@ -209,7 +329,7 @@ function App() {
           <h1 id="app-title">MedConnect Booking Console</h1>
           <p className="intro">
             Flujo mínimo de agenda clínica vía API Gateway: seleccionar bloque, crear reserva,
-            consultar estado y ejecutar confirmación o cancelación.
+            consultar estado, ejecutar confirmación o cancelación y verificar notificaciones Kafka.
           </p>
         </div>
         <div className="gateway-badge" aria-label="Conexión por API Gateway">
@@ -226,6 +346,71 @@ function App() {
       )}
 
       <section className="workspace-grid">
+        <section className="panel session-panel" aria-labelledby="session-title">
+          <PanelHeader
+            eyebrow="Sesión demo"
+            id="session-title"
+            icon={<LogIn size={22} />}
+            title="Autenticación para Gateway"
+            subtitle="Los endpoints de reservas y notificaciones usan el user_id validado por JWT."
+          />
+          <div className="session-grid">
+            <label>
+              Email
+              <input
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="paciente@medconnect.local"
+              />
+            </label>
+            <label>
+              Contraseña
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="password"
+              />
+            </label>
+            <label>
+              Nombre para registro
+              <input
+                value={authFullName}
+                onChange={(event) => setAuthFullName(event.target.value)}
+                placeholder="Paciente Demo"
+              />
+            </label>
+          </div>
+          <div className="session-actions">
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={registerPatient}
+              disabled={pendingOperation}
+            >
+              {loading === "register" ? <Loader2 className="spin" size={18} /> : <UserPlus size={18} />}
+              Registrar paciente
+            </button>
+            <button
+              className="primary-action inline-primary"
+              type="button"
+              onClick={loginPatient}
+              disabled={pendingOperation}
+            >
+              {loading === "login" ? <Loader2 className="spin" size={18} /> : <LogIn size={18} />}
+              Iniciar sesión
+            </button>
+          </div>
+          <div className={`session-state ${accessToken ? "session-state-ok" : ""}`}>
+            <ShieldCheck size={18} />
+            <span>
+              {accessToken
+                ? `Token activo · user_id=${authUserId} · rol=${authRole}`
+                : "Sin token activo. Registra el paciente si no existe y luego inicia sesión."}
+            </span>
+          </div>
+        </section>
+
         <section className="panel schedule-panel" aria-labelledby="slots-title">
           <PanelHeader
             eyebrow="Disponibilidad demo"
@@ -474,6 +659,103 @@ function App() {
             </div>
           )}
         </section>
+
+        <section className="panel notifications-panel" aria-labelledby="notifications-title">
+          <PanelHeader
+            eyebrow="Notificaciones"
+            id="notifications-title"
+            icon={<BellRing size={22} />}
+            title="Centro de notificaciones"
+            subtitle="Lee el resultado persistido por notification-service después de consumir eventos Kafka."
+          />
+          <div className="notification-toolbar">
+            <div className="unread-pill">
+              <Bell size={18} />
+              <span>{unreadCount} no leídas</span>
+            </div>
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={loadNotifications}
+              disabled={pendingOperation}
+            >
+              {loading === "notifications" ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
+              Cargar notificaciones
+            </button>
+          </div>
+          <p className="dev-hint">
+            Para la demo: crea o cancela una reserva, espera unos segundos y presiona cargar. Si Kafka estuvo caído,
+            esta lista muestra cuándo el outbox logró publicar y el consumidor persistió el mensaje.
+          </p>
+          <div className="notification-list" aria-live="polite">
+            {notifications.length === 0 ? (
+              <div className="empty-state compact">
+                <MailCheck size={28} />
+                <p>Sin notificaciones cargadas para la sesión actual.</p>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <NotificationCard
+                  key={notification.id}
+                  loading={loading}
+                  notification={notification}
+                  onMarkRead={markNotificationRead}
+                />
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel dev-panel" aria-labelledby="dev-title">
+          <PanelHeader
+            eyebrow="Panel dev"
+            id="dev-title"
+            icon={<Bug size={22} />}
+            title="Evidencia Kafka / Outbox"
+            subtitle="Resumen técnico para mostrar en la entrega sin abrir consola ni conectarse directo a Kafka."
+          />
+          <div className="dev-actions">
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={loadNotificationDevStatus}
+              disabled={pendingOperation}
+            >
+              {loading === "notification-dev" ? <Loader2 className="spin" size={18} /> : <Database size={18} />}
+              Actualizar panel dev
+            </button>
+          </div>
+          {devStatus ? (
+            <div className="dev-status-grid">
+              <DevStatusItem label="Servicio" value={devStatus.service} />
+              <DevStatusItem label="Storage" value={devStatus.store} />
+              <DevStatusItem label="Topic" value={devStatus.booking_topic} />
+              <DevStatusItem label="DLQ" value={devStatus.dlq_topic} />
+              <DevStatusItem label="Consumer group" value={devStatus.consumer_group} />
+              <DevStatusItem label="Brokers" value={devStatus.kafka_brokers.join(", ")} />
+              <DevStatusItem label="Total persistido" value={String(devStatus.total_notifications)} />
+              <DevStatusItem label="Del usuario" value={String(devStatus.recipient_total)} />
+              <DevStatusItem label="No leídas usuario" value={String(devStatus.recipient_unread)} />
+              <DevStatusItem label="Recipient" value={devStatus.recipient_id || "Sin sesión"} />
+            </div>
+          ) : (
+            <div className="empty-state compact">
+              <Database size={28} />
+              <p>Actualiza el panel para ver topic, consumer group, totales y últimas notificaciones.</p>
+            </div>
+          )}
+          {devStatus && devStatus.latest_notifications.length > 0 && (
+            <div className="dev-latest">
+              <h4>Últimas notificaciones persistidas</h4>
+              {devStatus.latest_notifications.map((notification) => (
+                <div className="timeline-row" key={`dev-${notification.id}`}>
+                  <span>{notification.event_type}</span>
+                  <small>{formatDate(notification.created_at)}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </section>
     </main>
   );
@@ -567,6 +849,58 @@ function BookingCard({
         </button>
       </div>
     </article>
+  );
+}
+
+function NotificationCard({
+  loading,
+  notification,
+  onMarkRead,
+}: {
+  loading: string;
+  notification: Notification;
+  onMarkRead: (notificationId: number) => void;
+}) {
+  const isUnread = !notification.read_at;
+  const isMarking = loading === `notification-read-${notification.id}`;
+
+  return (
+    <article className={`notification-card ${isUnread ? "notification-unread" : ""}`}>
+      <div className="notification-main">
+        <div>
+          <span className="muted-label">{notification.event_type}</span>
+          <h3>{notification.message}</h3>
+        </div>
+        <span className={`read-badge ${isUnread ? "read-badge-unread" : ""}`}>
+          {isUnread ? "No leída" : "Leída"}
+        </span>
+      </div>
+      <div className="notification-meta">
+        <span>booking_id={notification.booking_id}</span>
+        <span>event_id={notification.event_id}</span>
+        <span>{formatDate(notification.created_at)}</span>
+      </div>
+      <div className="booking-actions">
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => onMarkRead(notification.id)}
+          disabled={!isUnread || isMarking}
+        >
+          {isMarking ? <Loader2 className="spin" size={16} /> : <Eye size={16} />}
+          Marcar leída
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function DevStatusItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="dev-status-item">
+      <span>{label}</span>
+      <strong>{value || "Sin dato"}</strong>
+    </div>
   );
 }
 

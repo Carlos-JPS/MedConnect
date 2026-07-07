@@ -54,14 +54,15 @@ export type BookingDetail = {
 };
 
 export type BookingApi = ReturnType<typeof createBookingApi>;
+export type AccessTokenProvider = string | (() => string | undefined);
 
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export function createBookingApi(baseUrl = defaultBaseUrl) {
+export function createBookingApi(baseUrl = defaultBaseUrl, accessToken?: AccessTokenProvider) {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
 
   async function request<T>(path: string, init: RequestInit): Promise<T> {
-    const headers = requestHeaders(init);
+    const headers = requestHeaders(init, accessToken);
     const response = await fetch(`${normalizedBaseUrl}${path}`, {
       ...init,
       ...(headers ? { headers } : {}),
@@ -130,17 +131,28 @@ function normalizeBaseUrl(baseUrl: string) {
   return trimmedBaseUrl.replace(/\/+$/, "");
 }
 
-function requestHeaders(init: RequestInit) {
+function requestHeaders(init: RequestInit, accessToken?: AccessTokenProvider) {
   const headers = objectHeaders(init.headers);
   const hasContentType = Object.keys(headers).some(
     (headerName) => headerName.toLowerCase() === "content-type",
   );
+  const token = resolveAccessToken(accessToken);
 
   if (init.body && !hasContentType) {
     headers["Content-Type"] = "application/json";
   }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
   return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+function resolveAccessToken(accessToken?: AccessTokenProvider) {
+  if (!accessToken) {
+    return "";
+  }
+  return typeof accessToken === "function" ? accessToken() ?? "" : accessToken;
 }
 
 function objectHeaders(headers: RequestInit["headers"]) {

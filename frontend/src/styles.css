@@ -170,6 +170,11 @@ h3 {
   margin-top: 18px;
 }
 
+.session-panel,
+.dev-panel {
+  grid-column: 1 / -1;
+}
+
 .panel {
   min-width: 0;
   padding: 24px;
@@ -210,6 +215,7 @@ h3 {
 
 .slot-list,
 .booking-list,
+.notification-list,
 .form-stack {
   display: grid;
   gap: 14px;
@@ -217,6 +223,7 @@ h3 {
 
 .slot-card,
 .booking-card,
+.notification-card,
 .detail-card,
 .empty-state,
 .selected-slot {
@@ -269,7 +276,8 @@ h3 {
 .form-stack label,
 .filters label,
 .action-inputs label,
-.detail-search label {
+.detail-search label,
+.session-grid label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -342,6 +350,46 @@ textarea:focus {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin: 14px 0;
+}
+
+.session-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(180px, 0.72fr) minmax(200px, 1fr);
+  gap: 12px;
+}
+
+.session-actions,
+.notification-toolbar,
+.dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.inline-primary {
+  width: auto;
+  padding: 0 18px;
+}
+
+.session-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #f4f8f3;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.session-state-ok {
+  border-color: rgba(45, 125, 70, 0.2);
+  background: #e4f6e9;
+  color: #1f6336;
 }
 
 .primary-action,
@@ -485,6 +533,105 @@ textarea:focus {
   padding: 18px;
 }
 
+.notification-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.unread-pill,
+.read-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #f0f6f1;
+  color: var(--teal-strong);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.dev-hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.notification-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.notification-unread {
+  border-color: rgba(18, 111, 103, 0.34);
+  box-shadow: inset 4px 0 0 var(--teal);
+}
+
+.notification-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.notification-main h3 {
+  margin-top: 4px;
+}
+
+.read-badge {
+  background: #edf0eb;
+  color: #5c675f;
+}
+
+.read-badge-unread {
+  background: #fff1d6;
+  color: #8a4a11;
+}
+
+.notification-meta {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.dev-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.dev-status-item {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-solid);
+}
+
+.dev-status-item span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dev-status-item strong {
+  word-break: break-word;
+}
+
+.dev-latest {
+  margin-top: 18px;
+}
+
 .detail-heading h3 {
   margin: 2px 0 0;
   word-break: break-word;
@@ -582,6 +729,8 @@ textarea:focus {
   .filters,
   .detail-search,
   .action-inputs,
+  .session-grid,
+  .dev-status-grid,
   .detail-grid {
     grid-template-columns: 1fr;
   }

@@ -30,6 +30,15 @@ describe("App", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
 
+        if (url.endsWith("/auth/login") && method === "POST") {
+          return jsonResponse({
+            access_token: "access-token-1",
+            user_id: booking.patient_id,
+            role: "PATIENT",
+            expires_at: "2026-05-04T14:00:00Z",
+          });
+        }
+
         if (url.endsWith("/bookings") && method === "POST") {
           return jsonResponse({
             booking_id: booking.booking_id,
@@ -78,6 +87,11 @@ describe("App", () => {
     const user = userEvent.setup();
 
     render(<App />);
+
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+    });
+    expect(await screen.findByText(/sesión iniciada/i)).toBeInTheDocument();
 
     await act(async () => {
       await user.click(screen.getByRole("button", { name: /seleccionar bloque cardiología/i }));
