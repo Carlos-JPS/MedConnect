@@ -68,6 +68,7 @@ services:
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       AUTH_SERVICE_TARGET: ${AUTH_SERVICE_TARGET:-auth-service:50051}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:8081}
     ports:
       - "${API_GATEWAY_PORT:-8080}:${API_GATEWAY_PORT:-8080}"
     depends_on:
@@ -75,6 +76,7 @@ services:
       - payment-service
       - availability-service
       - auth-service
+      - notification-service
     networks:
       - medconnect_internal
 
@@ -90,6 +92,47 @@ services:
     networks:
       - medconnect_internal
 
+  kafka:
+    image: apache/kafka:4.2.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - medconnect_internal
+
+  kafka-init:
+    image: apache/kafka:4.2.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic medconnect.booking.events.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic medconnect.booking.events.dlq.v1 --partitions 1 --replication-factor 1 --config retention.ms=1209600000
+    networks:
+      - medconnect_internal
+
   booking-service:
     build:
       context: .
@@ -101,6 +144,15 @@ services:
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       BOOKING_EXTERNAL_CALL_TIMEOUT: ${BOOKING_EXTERNAL_CALL_TIMEOUT:-3s}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      BOOKING_EVENTS_TOPIC: ${BOOKING_EVENTS_TOPIC:-medconnect.booking.events.v1}
+      OUTBOX_DISPATCHER_ENABLED: ${OUTBOX_DISPATCHER_ENABLED:-true}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-50}
+      OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-500ms}
+      OUTBOX_RETRY_INITIAL_DELAY: ${OUTBOX_RETRY_INITIAL_DELAY:-1s}
+      OUTBOX_RETRY_MAX_DELAY: ${OUTBOX_RETRY_MAX_DELAY:-30s}
+      OUTBOX_CLAIM_TIMEOUT: ${OUTBOX_CLAIM_TIMEOUT:-2m}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-10}
       BOOKING_SAGA_MAX_RETRIES: ${BOOKING_SAGA_MAX_RETRIES:-3}
       BOOKING_SAGA_RETRY_DELAY: ${BOOKING_SAGA_RETRY_DELAY:-200ms}
       METRICS_PORT: ${BOOKING_METRICS_PORT:-9090}
@@ -123,9 +175,53 @@ services:
       - booking_db_data:/var/lib/postgresql/data
       - ./booking-service/migrations/000001_create_booking_tables.up.sql:/docker-entrypoint-initdb.d/001_create_booking_tables.sql:ro
       - ./booking-service/migrations/000002_allow_rebooking_cancelled_slots.up.sql:/docker-entrypoint-initdb.d/002_allow_rebooking_cancelled_slots.sql:ro
+      - ./booking-service/migrations/000003_create_outbox_events.up.sql:/docker-entrypoint-initdb.d/003_create_outbox_events.sql:ro
       - ./booking-service/migrations/000003_create_booking_saga_tables.up.sql:/docker-entrypoint-initdb.d/003_create_booking_saga_tables.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${BOOKING_DB_USER:-booking} -d ${BOOKING_DB_NAME:-booking_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medconnect_internal
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    environment:
+      NOTIFICATION_DB_DSN: ${NOTIFICATION_DB_DSN:-postgres://notification:notification_password@notification_db:5432/notification_db?sslmode=disable}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      BOOKING_EVENTS_TOPIC: ${BOOKING_EVENTS_TOPIC:-medconnect.booking.events.v1}
+      BOOKING_EVENTS_DLQ_TOPIC: ${BOOKING_EVENTS_DLQ_TOPIC:-medconnect.booking.events.dlq.v1}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-medconnect-notification-service-v1}
+      NOTIFICATION_RETRY_LIMIT: ${NOTIFICATION_RETRY_LIMIT:-3}
+      NOTIFICATION_LOG_ENABLED: ${NOTIFICATION_LOG_ENABLED:-true}
+      NOTIFICATION_HTTP_HOST: ${NOTIFICATION_HTTP_HOST:-0.0.0.0}
+      NOTIFICATION_HTTP_PORT: ${NOTIFICATION_HTTP_PORT:-8081}
+      METRICS_PORT: ${NOTIFICATION_METRICS_PORT:-9090}
+    expose:
+      - "${NOTIFICATION_HTTP_PORT:-8081}"
+      - "${NOTIFICATION_METRICS_PORT:-9090}"
+    depends_on:
+      notification_db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - medconnect_internal
+
+  notification_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:-notification_db}
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_password}
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+      - ./notification-service/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER:-notification} -d ${NOTIFICATION_DB_NAME:-notification_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -284,6 +380,8 @@ volumes:
   prometheus_data:
   payments_db_data:
   auth_db_data:
+  kafka_data:
+  notification_db_data:
 
 networks:
   medconnect_internal:

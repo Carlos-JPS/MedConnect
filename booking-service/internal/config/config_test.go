@@ -10,6 +10,15 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	t.Setenv("AVAILABILITY_SERVICE_TARGET", "")
 	t.Setenv("PAYMENT_SERVICE_TARGET", "")
 	t.Setenv("BOOKING_EXTERNAL_CALL_TIMEOUT", "")
+	t.Setenv("KAFKA_BROKERS", "")
+	t.Setenv("BOOKING_EVENTS_TOPIC", "")
+	t.Setenv("OUTBOX_DISPATCHER_ENABLED", "")
+	t.Setenv("OUTBOX_BATCH_SIZE", "")
+	t.Setenv("OUTBOX_POLL_INTERVAL", "")
+	t.Setenv("OUTBOX_RETRY_INITIAL_DELAY", "")
+	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "")
+	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "")
+	t.Setenv("OUTBOX_MAX_ATTEMPTS", "")
 	t.Setenv("BOOKING_SAGA_MAX_RETRIES", "")
 	t.Setenv("BOOKING_SAGA_RETRY_DELAY", "")
 
@@ -33,6 +42,33 @@ func TestLoadUsesDefaultsWhenEnvironmentIsMissing(t *testing.T) {
 	if cfg.ExternalCallTimeout != 3*time.Second {
 		t.Fatalf("expected default external call timeout 3s, got %s", cfg.ExternalCallTimeout)
 	}
+	if len(cfg.KafkaBrokers) != 1 || cfg.KafkaBrokers[0] != "kafka:9092" {
+		t.Fatalf("expected default kafka broker, got %v", cfg.KafkaBrokers)
+	}
+	if cfg.BookingEventsTopic != "medconnect.booking.events.v1" {
+		t.Fatalf("expected default booking topic, got %q", cfg.BookingEventsTopic)
+	}
+	if !cfg.OutboxDispatcherEnabled {
+		t.Fatalf("expected outbox dispatcher to be enabled by default")
+	}
+	if cfg.OutboxBatchSize != 50 {
+		t.Fatalf("expected default outbox batch size 50, got %d", cfg.OutboxBatchSize)
+	}
+	if cfg.OutboxPollInterval != 500*time.Millisecond {
+		t.Fatalf("expected default outbox poll interval 500ms, got %s", cfg.OutboxPollInterval)
+	}
+	if cfg.OutboxInitialRetryDelay != time.Second {
+		t.Fatalf("expected default outbox retry initial delay 1s, got %s", cfg.OutboxInitialRetryDelay)
+	}
+	if cfg.OutboxMaxRetryDelay != 30*time.Second {
+		t.Fatalf("expected default outbox max retry delay 30s, got %s", cfg.OutboxMaxRetryDelay)
+	}
+	if cfg.OutboxClaimTimeout != 2*time.Minute {
+		t.Fatalf("expected default outbox claim timeout 2m, got %s", cfg.OutboxClaimTimeout)
+	}
+	if cfg.OutboxMaxAttempts != 10 {
+		t.Fatalf("expected default outbox max attempts 10, got %d", cfg.OutboxMaxAttempts)
+	}
 	if cfg.SagaMaxRetries != 3 {
 		t.Fatalf("expected default saga max retries 3, got %d", cfg.SagaMaxRetries)
 	}
@@ -48,6 +84,15 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("AVAILABILITY_SERVICE_TARGET", "availability:6000")
 	t.Setenv("PAYMENT_SERVICE_TARGET", "payment:7000")
 	t.Setenv("BOOKING_EXTERNAL_CALL_TIMEOUT", "1500ms")
+	t.Setenv("KAFKA_BROKERS", "kafka-1:9092, kafka-2:9092")
+	t.Setenv("BOOKING_EVENTS_TOPIC", "custom.booking.events")
+	t.Setenv("OUTBOX_DISPATCHER_ENABLED", "false")
+	t.Setenv("OUTBOX_BATCH_SIZE", "25")
+	t.Setenv("OUTBOX_POLL_INTERVAL", "250ms")
+	t.Setenv("OUTBOX_RETRY_INITIAL_DELAY", "2s")
+	t.Setenv("OUTBOX_RETRY_MAX_DELAY", "45s")
+	t.Setenv("OUTBOX_CLAIM_TIMEOUT", "90s")
+	t.Setenv("OUTBOX_MAX_ATTEMPTS", "4")
 	t.Setenv("BOOKING_SAGA_MAX_RETRIES", "5")
 	t.Setenv("BOOKING_SAGA_RETRY_DELAY", "750ms")
 
@@ -70,6 +115,33 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.ExternalCallTimeout != 1500*time.Millisecond {
 		t.Fatalf("expected env external timeout, got %s", cfg.ExternalCallTimeout)
+	}
+	if len(cfg.KafkaBrokers) != 2 || cfg.KafkaBrokers[0] != "kafka-1:9092" || cfg.KafkaBrokers[1] != "kafka-2:9092" {
+		t.Fatalf("expected env kafka brokers, got %v", cfg.KafkaBrokers)
+	}
+	if cfg.BookingEventsTopic != "custom.booking.events" {
+		t.Fatalf("expected env booking topic, got %q", cfg.BookingEventsTopic)
+	}
+	if cfg.OutboxDispatcherEnabled {
+		t.Fatalf("expected env outbox dispatcher disabled")
+	}
+	if cfg.OutboxBatchSize != 25 {
+		t.Fatalf("expected env outbox batch size 25, got %d", cfg.OutboxBatchSize)
+	}
+	if cfg.OutboxPollInterval != 250*time.Millisecond {
+		t.Fatalf("expected env outbox poll interval, got %s", cfg.OutboxPollInterval)
+	}
+	if cfg.OutboxInitialRetryDelay != 2*time.Second {
+		t.Fatalf("expected env initial retry delay, got %s", cfg.OutboxInitialRetryDelay)
+	}
+	if cfg.OutboxMaxRetryDelay != 45*time.Second {
+		t.Fatalf("expected env max retry delay, got %s", cfg.OutboxMaxRetryDelay)
+	}
+	if cfg.OutboxClaimTimeout != 90*time.Second {
+		t.Fatalf("expected env claim timeout, got %s", cfg.OutboxClaimTimeout)
+	}
+	if cfg.OutboxMaxAttempts != 4 {
+		t.Fatalf("expected env max attempts 4, got %d", cfg.OutboxMaxAttempts)
 	}
 	if cfg.SagaMaxRetries != 5 {
 		t.Fatalf("expected env saga max retries, got %d", cfg.SagaMaxRetries)

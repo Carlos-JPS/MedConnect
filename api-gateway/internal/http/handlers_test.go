@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	notificationclient "github.com/MedConnect/api-gateway/internal/clients/notification"
 	authpb "github.com/MedConnect/auth-service/pb"
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
@@ -171,6 +172,63 @@ type fakePaymentClient struct {
 	refundReq       *paymentpb.RefundPaymentRequest
 }
 
+type fakeNotificationClient struct {
+	listRecipient   string
+	listLimit       int
+	unreadRecipient string
+	readID          int64
+	readRecipient   string
+	devRecipient    string
+	devLimit        int
+}
+
+func (c *fakeNotificationClient) ListNotifications(_ context.Context, recipientID string, limit int) (*notificationclient.ListResponse, error) {
+	c.listRecipient = recipientID
+	c.listLimit = limit
+	return &notificationclient.ListResponse{
+		Notifications: []notificationclient.Notification{
+			{
+				ID:          7,
+				EventID:     "event-1",
+				BookingID:   "booking-1",
+				EventType:   "booking.created",
+				RecipientID: recipientID,
+				Channel:     "IN_APP",
+				Message:     "Reserva creada.",
+				Status:      "SENT",
+				CreatedAt:   "2026-05-04T13:00:00Z",
+			},
+		},
+	}, nil
+}
+
+func (c *fakeNotificationClient) GetUnreadCount(_ context.Context, recipientID string) (*notificationclient.UnreadCountResponse, error) {
+	c.unreadRecipient = recipientID
+	return &notificationclient.UnreadCountResponse{UnreadCount: 1}, nil
+}
+
+func (c *fakeNotificationClient) MarkNotificationRead(_ context.Context, notificationID int64, recipientID string) (*notificationclient.MarkReadResponse, error) {
+	c.readID = notificationID
+	c.readRecipient = recipientID
+	return &notificationclient.MarkReadResponse{ID: notificationID, ReadAt: "2026-05-04T13:05:00Z"}, nil
+}
+
+func (c *fakeNotificationClient) GetDevStatus(_ context.Context, recipientID string, limit int) (*notificationclient.DevStatusResponse, error) {
+	c.devRecipient = recipientID
+	c.devLimit = limit
+	return &notificationclient.DevStatusResponse{
+		Service:            "notification-service",
+		Store:              "postgres",
+		BookingTopic:       "medconnect.booking.events.v1",
+		DLQTopic:           "medconnect.booking.events.dlq.v1",
+		ConsumerGroup:      "medconnect-notification-service-v1",
+		TotalNotifications: 2,
+		RecipientID:        recipientID,
+		RecipientTotal:     1,
+		RecipientUnread:    1,
+	}, nil
+}
+
 func (c *fakePaymentClient) CreatePayment(_ context.Context, req *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error) {
 	c.createReq = req
 	return &paymentpb.CreatePaymentResponse{
@@ -247,7 +305,7 @@ func (c *fakePaymentClient) RefundPayment(_ context.Context, req *paymentpb.Refu
 
 func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/bookings", strings.NewReader(`{
 		"patient_id":"patient-1",
 		"doctor_id":"doctor-1",
@@ -272,7 +330,7 @@ func TestCreateBookingEndpointTranslatesHTTPToGRPC(t *testing.T) {
 
 func TestGetBookingEndpointUsesPathID(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/bookings/booking-1", nil)
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -289,7 +347,7 @@ func TestGetBookingEndpointUsesPathID(t *testing.T) {
 
 func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/bookings?patient_id=patient-1&status=PENDING_PAYMENT", nil)
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -309,7 +367,7 @@ func TestListBookingsEndpointRequiresPatientIDAndMapsStatus(t *testing.T) {
 
 func TestCancelBookingEndpointUsesPatchSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -331,7 +389,7 @@ func TestCancelBookingEndpointMapsFailedPreconditionToConflict(t *testing.T) {
 	client := &fakeBookingClient{
 		cancelErr: status.Error(codes.FailedPrecondition, "estado de reserva invalido"),
 	}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/bookings/booking-1/cancel", strings.NewReader(`{"reason":"patient request"}`))
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -345,7 +403,7 @@ func TestCancelBookingEndpointMapsFailedPreconditionToConflict(t *testing.T) {
 
 func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/bookings/booking-1/confirm", strings.NewReader(`{"payment_id":"payment-1"}`))
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -365,7 +423,7 @@ func TestConfirmBookingEndpointUsesPostSubresource(t *testing.T) {
 
 func TestStartBookingSagaEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/booking-sagas", strings.NewReader(`{
 		"doctor_id":"doctor-1",
 		"slot_id":"slot-1",
@@ -398,7 +456,7 @@ func TestStartBookingSagaEndpointTranslatesHTTPToGRPC(t *testing.T) {
 
 func TestGetBookingSagaEndpointUsesPathID(t *testing.T) {
 	client := &fakeBookingClient{}
-	handler := NewHandler(client, nil, nil, fakeAuthClient{})
+	handler := NewHandler(client, nil, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/booking-sagas/saga-1", nil)
 	addAuth(req)
 	rec := httptest.NewRecorder()
@@ -413,6 +471,81 @@ func TestGetBookingSagaEndpointUsesPathID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"event_type":"SAGA_STARTED"`) {
 		t.Fatalf("expected saga events response, got %s", rec.Body.String())
+	}
+}
+
+func TestListNotificationsUsesAuthenticatedUser(t *testing.T) {
+	notificationClient := &fakeNotificationClient{}
+	handler := NewHandler(nil, nil, nil, fakeAuthClient{}, notificationClient)
+	req := httptest.NewRequest(http.MethodGet, "/notifications?limit=3", nil)
+	addAuth(req)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if notificationClient.listRecipient != "patient-1" {
+		t.Fatalf("expected authenticated patient id, got %q", notificationClient.listRecipient)
+	}
+	if notificationClient.listLimit != 3 {
+		t.Fatalf("expected limit 3, got %d", notificationClient.listLimit)
+	}
+	if !strings.Contains(rec.Body.String(), `"message":"Reserva creada."`) {
+		t.Fatalf("expected notification response, got %s", rec.Body.String())
+	}
+}
+
+func TestNotificationUnreadAndReadEndpoints(t *testing.T) {
+	notificationClient := &fakeNotificationClient{}
+	handler := NewHandler(nil, nil, nil, fakeAuthClient{}, notificationClient)
+
+	countReq := httptest.NewRequest(http.MethodGet, "/notifications/unread-count", nil)
+	addAuth(countReq)
+	countRec := httptest.NewRecorder()
+	handler.ServeHTTP(countRec, countReq)
+
+	if countRec.Code != http.StatusOK {
+		t.Fatalf("expected count status 200, got %d: %s", countRec.Code, countRec.Body.String())
+	}
+	if notificationClient.unreadRecipient != "patient-1" {
+		t.Fatalf("expected unread recipient patient-1, got %q", notificationClient.unreadRecipient)
+	}
+	if !strings.Contains(countRec.Body.String(), `"unread_count":1`) {
+		t.Fatalf("expected unread count response, got %s", countRec.Body.String())
+	}
+
+	readReq := httptest.NewRequest(http.MethodPatch, "/notifications/7/read", nil)
+	addAuth(readReq)
+	readRec := httptest.NewRecorder()
+	handler.ServeHTTP(readRec, readReq)
+
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("expected read status 200, got %d: %s", readRec.Code, readRec.Body.String())
+	}
+	if notificationClient.readID != 7 || notificationClient.readRecipient != "patient-1" {
+		t.Fatalf("expected read id 7 for patient-1, got id=%d recipient=%q", notificationClient.readID, notificationClient.readRecipient)
+	}
+}
+
+func TestNotificationDevStatusEndpointUsesAuthenticatedUser(t *testing.T) {
+	notificationClient := &fakeNotificationClient{}
+	handler := NewHandler(nil, nil, nil, fakeAuthClient{}, notificationClient)
+	req := httptest.NewRequest(http.MethodGet, "/notifications/dev/status?limit=4", nil)
+	addAuth(req)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if notificationClient.devRecipient != "patient-1" || notificationClient.devLimit != 4 {
+		t.Fatalf("expected dev request for patient-1 with limit 4, got recipient=%q limit=%d", notificationClient.devRecipient, notificationClient.devLimit)
+	}
+	if !strings.Contains(rec.Body.String(), `"booking_topic":"medconnect.booking.events.v1"`) {
+		t.Fatalf("expected dev status response, got %s", rec.Body.String())
 	}
 }
 
@@ -439,7 +572,7 @@ func TestWriteGRPCErrorMapsFailedPreconditionToConflict(t *testing.T) {
 func TestCreatePaymentEndpointTranslatesHTTPToGRPC(t *testing.T) {
 	bookingClient := &fakeBookingClient{}
 	paymentClient := &fakePaymentClient{}
-	handler := NewHandler(bookingClient, paymentClient, nil, fakeAuthClient{})
+	handler := NewHandler(bookingClient, paymentClient, nil, fakeAuthClient{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/payments", strings.NewReader(`{
 		"booking_id":"booking-1",
 		"user_id":"patient-1",
@@ -469,7 +602,7 @@ func addAuth(req *http.Request) {
 func TestPaymentActionEndpointsUsePathIDs(t *testing.T) {
 	bookingClient := &fakeBookingClient{}
 	paymentClient := &fakePaymentClient{}
-	handler := NewHandler(bookingClient, paymentClient, nil, nil)
+	handler := NewHandler(bookingClient, paymentClient, nil, nil, nil)
 
 	cases := []struct {
 		name   string
