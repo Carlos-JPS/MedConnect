@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	notificationclient "github.com/MedConnect/api-gateway/internal/clients/notification"
 	"github.com/MedConnect/api-gateway/internal/config"
 	authclient "github.com/MedConnect/api-gateway/internal/grpc/auth"
 	availabilityclient "github.com/MedConnect/api-gateway/internal/grpc/availability"
@@ -43,7 +44,12 @@ func main() {
 	}
 	defer authClient.Close()
 
-	var handler http.Handler = httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient)
+	notificationClient, err := notificationclient.NewClient(cfg.NotificationServiceURL)
+	if err != nil {
+		log.Fatalf("error al inicializar cliente notification-service: %v", err)
+	}
+
+	var handler http.Handler = httpapi.NewHandler(bookingClient, paymentClient, availabilityClient, authClient, notificationClient)
 	handler = httpapi.MetricsMiddleware(handler)
 	handler = httpapi.LoggingMiddleware(handler)
 	handler = httpapi.RequestIDMiddleware(handler)

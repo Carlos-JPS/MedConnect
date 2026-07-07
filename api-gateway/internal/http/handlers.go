@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	availabilitypb "github.com/Carlos-JPS/medconnect/availability-service/pb"
+	notificationclient "github.com/MedConnect/api-gateway/internal/clients/notification"
 	authpb "github.com/MedConnect/auth-service/pb"
 	pb "github.com/MedConnect/booking-service/pb"
 	paymentpb "github.com/sllanoscaro/payment-service/pb"
@@ -52,15 +54,23 @@ type AuthClient interface {
 	GetUserById(ctx context.Context, req *authpb.GetUserByIdRequest) (*authpb.GetUserByIdResponse, error)
 }
 
+type NotificationClient interface {
+	ListNotifications(ctx context.Context, recipientID string, limit int) (*notificationclient.ListResponse, error)
+	GetUnreadCount(ctx context.Context, recipientID string) (*notificationclient.UnreadCountResponse, error)
+	MarkNotificationRead(ctx context.Context, notificationID int64, recipientID string) (*notificationclient.MarkReadResponse, error)
+	GetDevStatus(ctx context.Context, recipientID string, limit int) (*notificationclient.DevStatusResponse, error)
+}
+
 type Handler struct {
 	booking      BookingClient
 	payment      PaymentClient
 	availability AvailabilityClient
 	auth         AuthClient
+	notification NotificationClient
 }
 
-func NewHandler(booking BookingClient, payment PaymentClient, availability AvailabilityClient, auth AuthClient) *Handler {
-	return &Handler{booking: booking, payment: payment, availability: availability, auth: auth}
+func NewHandler(booking BookingClient, payment PaymentClient, availability AvailabilityClient, auth AuthClient, notification NotificationClient) *Handler {
+	return &Handler{booking: booking, payment: payment, availability: availability, auth: auth, notification: notification}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +83,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.validateToken(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/auth/users/"):
 		h.getUser(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/notifications":
+		h.withAuth(h.listNotifications)(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/notifications/unread-count":
+		h.withAuth(h.getUnreadNotifications)(w, r)
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/notifications/") && strings.HasSuffix(r.URL.Path, "/read"):
+		h.withAuth(h.markNotificationRead)(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/notifications/dev/status":
+		h.withAuth(h.getNotificationDevStatus)(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/bookings":
 		h.withAuth(h.createBooking)(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/booking-sagas":
@@ -121,6 +139,97 @@ type startBookingSagaRequest struct {
 	Amount          float64 `json:"amount"`
 	Currency        string  `json:"currency"`
 	PaymentMethodID string  `json:"payment_method_id"`
+}
+
+func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
+	if !h.requireNotificationClient(w) {
+		return
+	}
+	recipientID, ok := authenticatedUserID(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := h.notification.ListNotifications(r.Context(), recipientID, limitFromQuery(r, 10))
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getUnreadNotifications(w http.ResponseWriter, r *http.Request) {
+	if !h.requireNotificationClient(w) {
+		return
+	}
+	recipientID, ok := authenticatedUserID(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := h.notification.GetUnreadCount(r.Context(), recipientID)
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) markNotificationRead(w http.ResponseWriter, r *http.Request) {
+	if !h.requireNotificationClient(w) {
+		return
+	}
+	recipientID, ok := authenticatedUserID(w, r)
+	if !ok {
+		return
+	}
+
+	notificationID, ok := notificationIDFromReadPath(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusNotFound, "notificacion no encontrada")
+		return
+	}
+
+	resp, err := h.notification.MarkNotificationRead(r.Context(), notificationID, recipientID)
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getNotificationDevStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.requireNotificationClient(w) {
+		return
+	}
+	recipientID, ok := authenticatedUserID(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := h.notification.GetDevStatus(r.Context(), recipientID, limitFromQuery(r, 5))
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) requireNotificationClient(w http.ResponseWriter) bool {
+	if h.notification == nil {
+		writeError(w, http.StatusServiceUnavailable, "notification-service no configurado")
+		return false
+	}
+	return true
+}
+
+func authenticatedUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	userID, ok := r.Context().Value(userIDKey).(string)
+	if !ok || userID == "" {
+		writeError(w, http.StatusUnauthorized, "identidad de usuario no encontrada")
+		return "", false
+	}
+	return userID, true
 }
 
 func (h *Handler) startBookingSaga(w http.ResponseWriter, r *http.Request) {
@@ -753,6 +862,35 @@ func valueAfterPrefix(path string, prefix string) string {
 	return value
 }
 
+func notificationIDFromReadPath(path string) (int64, bool) {
+	value := strings.TrimPrefix(path, "/notifications/")
+	if value == path || value == "" {
+		return 0, false
+	}
+	value = strings.TrimSuffix(value, "/read")
+	if value == "" || strings.Contains(value, "/") {
+		return 0, false
+	}
+
+	id, err := strconv.ParseInt(value, 10, 64)
+	return id, err == nil && id > 0
+}
+
+func limitFromQuery(r *http.Request, fallback int) int {
+	value := r.URL.Query().Get("limit")
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	if parsed > 50 {
+		return 50
+	}
+	return parsed
+}
+
 type bookingSagaResponse struct {
 	SagaID             string `json:"saga_id"`
 	BookingID          string `json:"booking_id,omitempty"`
@@ -1079,6 +1217,19 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+func writeNotificationError(w http.ResponseWriter, err error) {
+	var upstreamErr notificationclient.HTTPError
+	if errors.As(err, &upstreamErr) {
+		statusCode := upstreamErr.StatusCode
+		if statusCode < http.StatusBadRequest || statusCode > http.StatusNetworkAuthenticationRequired {
+			statusCode = http.StatusBadGateway
+		}
+		writeError(w, statusCode, upstreamErr.Message)
+		return
+	}
+	writeError(w, http.StatusBadGateway, err.Error())
 }
 
 // ── Auth handlers ──────────────────────────────────────────────

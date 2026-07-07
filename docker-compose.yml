@@ -68,6 +68,7 @@ services:
       PAYMENT_SERVICE_TARGET: ${PAYMENT_SERVICE_TARGET:-payment-service:50051}
       AVAILABILITY_SERVICE_TARGET: ${AVAILABILITY_SERVICE_TARGET:-availability-service:50051}
       AUTH_SERVICE_TARGET: ${AUTH_SERVICE_TARGET:-auth-service:50051}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:8081}
     ports:
       - "${API_GATEWAY_PORT:-8080}:${API_GATEWAY_PORT:-8080}"
     depends_on:
@@ -75,6 +76,7 @@ services:
       - payment-service
       - availability-service
       - auth-service
+      - notification-service
     networks:
       - medconnect_internal
 
@@ -195,8 +197,11 @@ services:
       KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-medconnect-notification-service-v1}
       NOTIFICATION_RETRY_LIMIT: ${NOTIFICATION_RETRY_LIMIT:-3}
       NOTIFICATION_LOG_ENABLED: ${NOTIFICATION_LOG_ENABLED:-true}
+      NOTIFICATION_HTTP_HOST: ${NOTIFICATION_HTTP_HOST:-0.0.0.0}
+      NOTIFICATION_HTTP_PORT: ${NOTIFICATION_HTTP_PORT:-8081}
       METRICS_PORT: ${NOTIFICATION_METRICS_PORT:-9090}
     expose:
+      - "${NOTIFICATION_HTTP_PORT:-8081}"
       - "${NOTIFICATION_METRICS_PORT:-9090}"
     depends_on:
       notification_db:
