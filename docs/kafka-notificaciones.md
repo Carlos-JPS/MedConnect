@@ -22,6 +22,14 @@ Esto evita el problema clásico de publicar directo a Kafka después de guardar 
 
 ## 3. Arquitectura
 
+### Diagrama principal del bloque Kafka
+
+![Flujo Kafka en MedConnect](<Kafka MedConnect-Kafka en MedConnect.drawio.png>)
+
+Este es el diagrama recomendado para defender el bloque Kafka individualmente. Se concentra en el camino asíncrono de eventos: outbox transaccional, dispatcher, topic principal, consumer group, `notification-service`, DLQ e idempotencia en `notification_db`.
+
+Resumen textual del flujo:
+
 ```text
 API Gateway ──gRPC──► Booking Service ──transacción──► booking_db
                                       │                 ├─ appointments
@@ -40,6 +48,14 @@ API Gateway ──gRPC──► Booking Service ──transacción──► book
                                       ▼
                               notification_db
 ```
+
+### Contexto dentro del sistema completo
+
+![Sistema completo con Kafka](<Kafka MedConnect-Sistema completo - kafka.drawio.png>)
+
+Este segundo diagrama muestra cómo el bloque Kafka convive con el resto de MedConnect: frontend, API Gateway, autenticación, SAGA, disponibilidad, pagos, sharding y observabilidad.
+
+No es el diagrama principal del bloque Kafka porque incluye responsabilidades de otros integrantes. Sirve como contexto o anexo para explicar que Kafka no coordina la SAGA: la SAGA puede originar eventos de reserva, pero el camino Kafka implementado se concentra en publicar esos eventos desde el outbox y procesarlos en `notification-service`.
 
 ## 4. Componentes modificados o agregados
 
