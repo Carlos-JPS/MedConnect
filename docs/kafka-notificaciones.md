@@ -76,6 +76,20 @@ Nuevo microservicio Go que:
 - Publica en `medconnect.booking.events.dlq.v1` cuando el mensaje es inválido o se agotan los reintentos.
 - Confirma offset manualmente solo después de persistir o enviar a DLQ.
 - Expone métricas Prometheus de eventos insertados, duplicados y enviados a DLQ.
+- Expone un HTTP interno para listar notificaciones, contar no leídas, marcarlas como leídas y consultar un estado técnico de la integración.
+
+### `api-gateway` y `frontend`
+
+Se agregó:
+
+- Cliente interno del gateway hacia `notification-service`.
+- Endpoints protegidos por JWT:
+  - `GET /notifications`
+  - `GET /notifications/unread-count`
+  - `PATCH /notifications/{id}/read`
+  - `GET /notifications/dev/status`
+- Centro de notificaciones en React.
+- Panel dev para entrega con topic, DLQ, consumer group, broker, totales persistidos y últimas notificaciones consumidas.
 
 ## 5. Tópicos Kafka
 
@@ -208,8 +222,11 @@ Prometheus scrapea `notification-service:9090` además de los servicios existent
 | `notification-service/internal/consumer/kafka_integration_test.go` | Smoke test opcional de publicación a DLQ contra Kafka real. |
 | `notification-service/internal/processor/processor.go` | Validación, notificación simulada, reintentos. |
 | `notification-service/internal/repository/postgres/repository.go` | Persistencia idempotente. |
+| `notification-service/internal/httpapi/server.go` | HTTP interno para consultar notificaciones y panel dev. |
 | `notification-service/internal/observability/metrics.go` | Métricas Prometheus de procesamiento y DLQ. |
 | `notification-service/db/init.sql` | Esquema de notificaciones. |
+| `api-gateway/internal/clients/notification/client.go` | Cliente HTTP interno del gateway hacia `notification-service`. |
+| `frontend/src/services/api/notificationApi.ts` | Cliente frontend para centro de notificaciones y panel dev. |
 
 ## 11. Cómo ejecutar
 
@@ -219,7 +236,7 @@ Desde `MedConnect/`:
 docker compose up --build
 ```
 
-Si ya existía un volumen de `booking_db` antes de agregar `status`, `locked_until` y `failed_at` al outbox, recrear los volúmenes para que Docker ejecute nuevamente las migraciones de inicialización:
+Si ya existía un volumen de `booking_db` antes de agregar `status`, `locked_until` y `failed_at` al outbox, o un volumen de `notification_db` antes de agregar `read_at`, recrear los volúmenes para que Docker ejecute nuevamente las migraciones de inicialización:
 
 ```bash
 docker compose down -v
@@ -235,7 +252,7 @@ docker compose exec booking_db psql -U booking -d booking_db -c "SELECT id, even
 Para revisar notificaciones generadas:
 
 ```bash
-docker compose exec notification_db psql -U notification -d notification_db -c "SELECT event_id, booking_id, event_type, recipient_id, message, created_at FROM notifications ORDER BY created_at DESC;"
+docker compose exec notification_db psql -U notification -d notification_db -c "SELECT id, event_id, booking_id, event_type, recipient_id, message, created_at, read_at FROM notifications ORDER BY created_at DESC;"
 ```
 
 Para revisar tópicos:
@@ -243,6 +260,17 @@ Para revisar tópicos:
 ```bash
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 ```
+
+Flujo desde frontend:
+
+1. Abrir `http://localhost:5173`.
+2. Registrar el paciente demo si aún no existe.
+3. Iniciar sesión para obtener un JWT desde `auth-service`.
+4. Seleccionar un bloque y crear o cancelar una reserva.
+5. Esperar unos segundos y presionar **Cargar notificaciones**.
+6. Presionar **Actualizar panel dev** para mostrar topic, DLQ, consumer group, broker y últimos mensajes persistidos.
+
+El frontend no se conecta directo a Kafka ni a PostgreSQL. Todas las consultas pasan por `api-gateway`, que valida el token y usa el `user_id` autenticado como `recipient_id`.
 
 ## 12. Verificación ejecutada
 
@@ -335,7 +363,6 @@ La construcción Docker de `booking-service` y `notification-service` depende de
 - No se implementa correo, SMS ni push real; la notificación es simulada y persistida. Se aceptó porque el objetivo es el flujo asíncrono y la idempotencia, no la integración con proveedores externos.
 - No se agrega Schema Registry; el contrato se versiona con `schema_version`. Se aceptó para evitar infraestructura adicional en una demo local, manteniendo una base para evolucionar contratos.
 - No se implementa TLS/SASL para Kafka porque el entorno es de demo local. En producción se requeriría autenticación, autorización y cifrado.
-- No se modifica el frontend ni se agrega endpoint público para notificaciones. Se aceptó para mantener el bloque acotado a backend y demostrar el resultado con consultas SQL.
+- El frontend consulta notificaciones por polling manual. Se aceptó para una demo controlada; una evolución natural sería reemplazarlo por SSE o WebSocket para actualizaciones en tiempo real.
 - `booking.expired` está soportado por contrato, pero no se genera automáticamente en el flujo actual. Se dejó preparado para una futura tarea programada de expiración de reservas.
 - El outbox usa `locked_until` como lease. Si una instancia cae después de publicar y antes de marcar `PUBLISHED`, el evento puede republicarse al expirar el lease; esto es consistente con at-least-once y se controla con idempotencia en el consumidor.
-
